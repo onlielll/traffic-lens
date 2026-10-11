@@ -1,71 +1,82 @@
-# Traffic Lens
+<p align="center"><img src="assets/icon-preview.png" width="64" alt="Traffic Lens"></p>
+<h1 align="center">Traffic Lens</h1>
+<p align="center"><strong>A Windows overlay for Mihomo proxy traffic</strong></p>
+<p align="center"><a href="https://github.com/onlielll/traffic-lens/releases">Download</a> · <a href="#quick-start">Quick start</a> · <a href="README.md">简体中文</a></p>
+<p align="center"><a href="https://github.com/onlielll/traffic-lens/actions/workflows/release.yml"><img src="https://github.com/onlielll/traffic-lens/actions/workflows/release.yml/badge.svg" alt="Build"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6dddc2" alt="MIT License"></a></p>
 
-A compact Windows overlay that tells you which proxy target is using your bandwidth, without opening the Clash connection table. [简体中文](README.md)
+Traffic Lens displays proxy upload and download speeds, the busiest targets, and daily usage on your Windows desktop. It reads Mihomo's local API and works with clients such as Clash Verge.
 
-**2.0.0 is the first public preview.** Installers and portable packages include .NET 10.0.12: no separate .NET 8 or .NET 10 installation is required.
-
-![Detail view](docs/images/overlay-en.png)
-![Mini view](docs/images/mini-en.png)
-![Settings](docs/images/settings-en.png)
-
-Screenshots use example domains rather than personal traffic records.
+<table>
+<tr>
+<td width="60%" valign="top"><strong>Detail view</strong><br><br><img src="docs/images/overlay-en.png" width="400" alt="Detailed overlay"></td>
+<td width="40%" valign="top"><strong>Mini view</strong><br><br><img src="docs/images/mini-en.png" width="250" alt="Mini overlay"></td>
+</tr>
+</table>
 
 ## Features
 
-- Independent download and upload leaders, domain grouping or individual connection ranking, with destination IP as a fallback.
-- Exclusion of final DIRECT outbound connections; unknown routes remain separate.
-- Detail and mini views, edge snapping, saved positions, opacity and always-on-top controls.
-- A small lock button with optional input pass-through for the rest of the overlay.
-- Automatic expansion above configurable speed thresholds.
-- Local daily totals, today/seven-day rankings, 30-day retention, tray controls, optional startup and single-instance activation.
+- **Live rankings** — Separate download and upload leaders, grouped by domain or ranked by connection, with available node and process details.
+- **Daily usage** — Domain rankings for today and the past seven days, with 30-day retention by default.
+- **Overlay controls** — Drag, snap to edges, lock, and enable click-through. Adjust opacity, scale, and always-on-top behavior.
+- **Automatic mini mode** — Keep key speeds visible and expand when traffic exceeds your thresholds.
+- **Preferences** — Choose displayed metrics, Chinese or English, tray controls, and optional startup with Windows.
 
-## Getting started
+<details>
+<summary>Settings</summary>
 
-Download an attachment from this repository's **Releases** for your architecture: `TrafficLens-2.0.0-win-x64-setup.exe`, `TrafficLens-2.0.0-win-x86-setup.exe`, or `TrafficLens-2.0.0-win-arm64-setup.exe`. The matching portable ZIPs end in `-portable.zip`.
+![Settings](docs/images/settings-en.png)
 
-The installer runs for the current user without administrator privileges and offers an optional desktop shortcut. For portable use, extract the complete folder and launch `ProxyTrafficFloat.exe`; keep all companion files together. Uninstalling preserves configuration and usage statistics.
+</details>
 
-Keep Mihomo or Clash Verge running. Local named pipes are discovered automatically; a local HTTP endpoint or pipe and an API secret can be entered in Settings if required. Closing Settings leaves monitoring active; use the tray menu to exit the monitor.
+## Download
 
-The prepared source package is `TrafficLens-2.0.0-source.zip`. Source archives require building and are not runnable downloads.
+Choose an installer or portable package from [Releases](https://github.com/onlielll/traffic-lens/releases).
 
-## Compatibility and size
-
-The minimum distribution target is Windows 10 1607, build 14393, with Windows 11 also targeted. Not every historical Windows release or device has been tested. Microsoft's .NET support follows the OS lifecycle; maintained Windows 10 Enterprise/LTSC editions differ from the application's broader runtime target. See [Microsoft's platform documentation](https://learn.microsoft.com/en-us/dotnet/core/install/windows).
-
-| Architecture | Validation |
+| Architecture | File identifier |
 | --- | --- |
-| x64 | Tested on Windows 11 build 26200 with the local API, overlay, Settings and packaged execution |
-| x86 | Ran in the same x64 system's 32-bit compatibility environment; no physical 32-bit Windows 10 validation yet |
-| ARM64 | Cross-built packages; no ARM64 hardware validation yet |
+| Intel / AMD 64-bit | `win-x64` |
+| 32-bit Windows | `win-x86` |
+| Windows on ARM | `win-arm64` |
 
-The resident overlay uses Win32/GDI and does not load WPF. The separate WPF Settings process exits when closed. Both share one packaged runtime, reducing the x64 folder from roughly 208 MiB with duplicated runtimes to 132 MiB, about 36.8% smaller. The x64 portable ZIP is approximately 59 MiB and the installer approximately 43 MiB; attachment sizes are authoritative.
+Installers include the runtime and install for the current user without administrator privileges. For portable use, extract the folder and run `ProxyTrafficFloat.exe`.
 
-Self-contained packages are larger than the old runtime-dependent downloads in exchange for no runtime setup and offline execution. Package size is not resident memory usage. See [validation results](docs/VALIDATION.md) for measurement methods and stability observations.
+The distribution targets Windows 10 1607+ and Windows 11. x64 and x86 have been tested on Windows 11; ARM64 hardware testing is pending. See the [validation report](docs/VALIDATION.md).
+
+## Quick start
+
+1. Start Mihomo or Clash Verge.
+2. Install and launch Traffic Lens. It discovers the local Mihomo API automatically.
+3. If it cannot connect, enter a local HTTP address, such as `http://127.0.0.1:9090`, or a named pipe in Settings, along with the API secret if required.
+
+Drag an empty area to move the overlay. Use the toolbar to open Settings, change view, lock, or hide it. Click the mini view to expand temporarily; the lock button and tray remain available with click-through enabled.
+
+By default, the overlay expands when the download leader reaches 1 MB/s or the upload leader reaches 512 KB/s for two seconds. It collapses after both stay below half their thresholds for ten seconds. Thresholds and delays are configurable.
+
+Use the tray to show, hide, or exit. Closing Settings leaves monitoring active. Language changes in Connection & startup apply immediately.
 
 ## Measurement and privacy
 
-Connections are sampled once per second; speeds average the last three seconds. Daily amounts include observed increments during monitoring only. New connections and reconnections establish a baseline rather than recounting earlier usage. Short connections and monitoring gaps may be missed, so totals are diagnostic, not billing figures. Process identification depends on Mihomo, and HTTPS does not reveal the downloaded file.
+Traffic Lens reads only the local Mihomo API. Final DIRECT connections and unknown routes are excluded from proxy totals. Connections are sampled once per second; displayed speeds average the last three seconds.
 
-Configuration and SQLite statistics remain in `%LOCALAPPDATA%\ProxyTrafficFloat`. Only daily domain/IP upload and download totals are retained, not full URLs or connection history. Secrets use Windows DPAPI. Traffic Lens reads local API data and does not change routing, terminate connections, upload statistics or perform external speed tests.
+Observed totals cover increments seen while monitoring. Short connections and disconnected periods may be missed. Process information depends on Mihomo, and HTTPS connections do not identify the downloaded file.
+
+Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change routing rules. Uninstalling preserves local settings and records.
 
 ## Development
 
-Use Windows and .NET 10 SDK. `global.json` selects 10.0.401 with compatible feature-band roll-forward. Build and package from the source root:
+Requires Windows and .NET 10 SDK. Installer builds also require Inno Setup 6.
 
 ```powershell
 .\build.ps1 -Runtime win-x64 -Test
 .\scripts\package.ps1 -Runtime win-x64 -IncludeSource
 ```
 
-Installer builds require Inno Setup 6; specify `-Compiler` or use `-SkipInstaller` for ZIP-only packaging. Outputs are placed in `dist/`. GitHub Actions builds all three architectures and creates a reviewable draft Release for version tags.
+Use `win-x86` or `win-arm64` for other architectures. Outputs go to `dist/`; GitHub Actions builds all three architectures.
 
-See [CONTRIBUTING](CONTRIBUTING.md), [CHANGELOG](CHANGELOG.md) and the [first GitHub upload guide](docs/FIRST-GITHUB-UPLOAD.md).
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Validation](docs/VALIDATION.md)
 
-## License and visual references
+## License
 
-Copyright © 2026 **onlielll**. Application code and original assets are licensed under [MIT](LICENSE). Bundled runtime, open-source icon and installer-tool terms are described in [third-party notices](THIRD-PARTY-NOTICES.md).
+Copyright © 2026 **onlielll** · [MIT](LICENSE)
 
-Visual hierarchy and spacing draw inspiration from [ModernFlyouts](https://github.com/ModernFlyouts-Community/ModernFlyouts) and [Windows Fluent design](https://learn.microsoft.com/en-us/windows/apps/design/). Toolbar balance follows [Apple HIG](https://developer.apple.com/design/human-interface-guidelines/sf-symbols), using MIT-licensed [Heroicons](https://github.com/tailwindlabs/heroicons) solid vectors. The tray icon is original to this project.
-
-Choose Chinese, English or the system default in Connection settings. Changes apply instantly, including the overlay and tray menu. Settings switches animate their thumb and track color over 160 ms; closing settings releases the separate settings process.
+Toolbar icons use [Heroicons](https://github.com/tailwindlabs/heroicons). See [third-party notices](THIRD-PARTY-NOTICES.md) for bundled component licenses.

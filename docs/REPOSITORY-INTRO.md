@@ -4,15 +4,15 @@
 
 ## GitHub Description
 
-> 一眼看见谁在占用代理带宽。Windows 桌面悬浮窗，支持 Mihomo 实时上下行排行和本机每日统计。 / See what's using your proxy bandwidth: a compact Windows overlay with live Mihomo upload/download leaders and local daily usage.
+> Windows 上的 Mihomo 流量监控悬浮窗：实时排行与每日统计。Mihomo traffic overlay for Windows: live rankings and daily usage.
 
 Suggested topics: `windows`, `mihomo`, `clash`, `traffic-monitor`, `desktop`, `csharp`.
 
 ## 首次 Release · v2.0.0 preview
 
-不用一直打开连接表，也能看见谁在占用代理带宽。Traffic Lens 把当前下载和上传最快的目标放进一块紧凑的桌面小窗，并在本机保留每日监测排行。
+Traffic Lens 是 Windows 上的 Mihomo 代理流量监控悬浮窗，提供实时上下行排行、每日域名用量和可自动收起的桌面视图。
 
-See what's using your proxy bandwidth without keeping the connections page open. Traffic Lens puts the fastest download and upload targets in a compact desktop overlay and keeps observed daily usage on your computer.
+Traffic Lens is a Windows overlay for Mihomo proxy traffic, with live upload/download rankings, daily domain usage, and an automatically collapsing desktop view.
 
 小窗可以拖动、吸附、锁定和自动收起；速度超过阈值时再展开。设置支持中文和英文，运行环境已包含在下载包中，无需另装 .NET 8 或 .NET 10。请保持 Mihomo 或 Clash Verge 运行。
 

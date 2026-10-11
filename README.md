@@ -1,98 +1,82 @@
-# Traffic Lens · 代理流量
+<p align="center"><img src="assets/icon-preview.png" width="64" alt="Traffic Lens"></p>
+<h1 align="center">Traffic Lens</h1>
+<p align="center"><strong>Mihomo 代理流量监控悬浮窗</strong></p>
+<p align="center"><a href="https://github.com/onlielll/traffic-lens/releases">下载</a> · <a href="#快速开始">快速开始</a> · <a href="README.en.md">English</a></p>
+<p align="center"><a href="https://github.com/onlielll/traffic-lens/actions/workflows/release.yml"><img src="https://github.com/onlielll/traffic-lens/actions/workflows/release.yml/badge.svg" alt="Build"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6dddc2" alt="MIT License"></a></p>
 
-不用打开 Clash 连接表，随时看到哪个代理目标正在消耗带宽。
+Traffic Lens 在 Windows 桌面显示代理上下行速率、当前下载与上传最快的目标，并记录每日域名用量。通过 Mihomo 本地接口读取数据，适用于 Clash Verge 等使用 Mihomo 的客户端。
 
-Traffic Lens 是面向 Windows 的轻量桌面悬浮窗，读取 Mihomo 的本地接口，分别显示下载和上传最快的域名、IP、节点及可获取的程序名称，并保存每日代理流量排行。
+<table>
+<tr>
+<td width="60%" valign="top"><strong>详细模式</strong><br><br><img src="docs/images/overlay.png" width="400" alt="详细悬浮窗"></td>
+<td width="40%" valign="top"><strong>迷你模式</strong><br><br><img src="docs/images/mini.png" width="250" alt="迷你悬浮窗"></td>
+</tr>
+</table>
 
-See what's using your proxy bandwidth without keeping the connections page open. Traffic Lens shows the fastest upload and download targets in a compact Windows overlay and keeps observed daily usage on your computer.
+## 核心功能
 
-**2.0.0 公开预览版**提供 Windows 10/11 的安装包和便携包。运行环境已随包附带，无需另装 .NET 8 或 .NET 10。[English](README.en.md)
+- **实时排行**：分别显示下载和上传最快的目标，支持域名合并或单连接排行，展示可获取的节点与进程信息。
+- **每日统计**：查看今天、近七天的域名用量排行，默认保留 30 天记录。
+- **悬浮窗控制**：拖动、边缘吸附、锁定与点击穿透，可调整透明度、缩放和置顶状态。
+- **自动收起与展开**：迷你模式保留关键速率，超过设定阈值后自动展开。
+- **个性化设置**：展示内容独立开关，支持中文、英文、托盘控制与可选开机启动。
 
-![详细悬浮窗](docs/images/overlay.png)
-![迷你悬浮窗](docs/images/mini.png)
-![设置界面](docs/images/settings.png)
+<details>
+<summary>设置界面</summary>
 
-截图使用示例域名，不含个人流量记录。
+![设置](docs/images/settings.png)
 
-## 功能
+</details>
 
-- 上下行最快目标分别排名；按域名合并或查看单连接，无域名时使用目标 IP。
-- 根据实际最终出站排除 DIRECT，无法识别的链路单列为未知。
-- 详细窗与迷你窗，可拖动、边缘吸附、记住位置、调节透明度及置顶。
-- 点击小锁锁定；默认锁定后点击穿透，解锁按钮和托盘仍可操作。
-- 超过速度阈值自动展开，空闲后收起；展示内容可独立开关。
-- 本地每日统计、今天/近七天排行，默认保留 30 天。
-- 托盘运行、可选开机启动、重复启动唤起已有实例。
-- 中文 / English / 跟随系统，切换立即生效；设置开关有平滑滑块与底色过渡。
+## 下载
 
-## 下载与运行
+在 [Releases](https://github.com/onlielll/traffic-lens/releases) 下载对应架构的安装包或便携包。
 
-在本仓库的 **Releases** 中下载适合电脑架构的附件：
-
-| 电脑 | 安装包 | 便携包 |
-| --- | --- | --- |
-| 常见 Intel/AMD 64 位电脑 | `TrafficLens-2.0.0-win-x64-setup.exe` | `TrafficLens-2.0.0-win-x64-portable.zip` |
-| 32 位 Windows | `TrafficLens-2.0.0-win-x86-setup.exe` | `TrafficLens-2.0.0-win-x86-portable.zip` |
-| Windows on ARM | `TrafficLens-2.0.0-win-arm64-setup.exe` | `TrafficLens-2.0.0-win-arm64-portable.zip` |
-
-安装包为当前 Windows 用户安装，提供开始菜单入口和可选桌面快捷方式，无需管理员权限。便携包解压后双击 `ProxyTrafficFloat.exe`，保持同目录文件完整。关闭设置页后仍继续监控；从托盘选择退出才停止。卸载安装版保留本机设置和流量记录。
-
-保持 Mihomo 或 Clash Verge 运行。程序自动发现本机 Mihomo 命名管道；连接失败时从托盘打开设置，填写本机 HTTP 地址（如 `http://127.0.0.1:9090`）或命名管道，按需输入接口密钥。
-
-GitHub 自动生成的 “Source code” 是源码，不能直接运行。整理好的源码附件是 `TrafficLens-2.0.0-source.zip`。
-
-## 兼容性与资源占用
-
-最低发行目标为 Windows 10 1607（build 14393），也面向 Windows 11；这不是全部历史系统和硬件已经实测的承诺。微软对 .NET 10 的维护支持范围取决于系统生命周期，目前 Windows 10 主要为仍受维护的 Enterprise/LTSC 系列，与应用的运行目标不同。[微软平台说明](https://learn.microsoft.com/en-us/dotnet/core/install/windows)
-
-| 架构 | 当前验证范围 |
+| 电脑架构 | 文件标识 |
 | --- | --- |
-| x64 | Windows 11 build 26200 上测试了接口、悬浮窗、设置与发布包运行 |
-| x86 | 在上述 x64 系统的 32 位兼容环境中运行；尚未在真实 32 位 Windows 10 电脑实测 |
-| ARM64 | 发布包已交叉构建；尚未在 ARM64 设备实测 |
+| Intel / AMD 64 位 | `win-x64` |
+| 32 位 Windows | `win-x86` |
+| Windows on ARM | `win-arm64` |
 
-常驻程序使用 Win32/GDI 绘制，不加载 WPF；WPF 设置页仅在打开时运行，关闭后退出。两个程序共享一份随包发布的 .NET 10.0.12 运行时。x64 发布目录约 132 MiB，比两套运行时分别打包的约 208 MiB 减少约 36.8%。x64 便携 ZIP 约 59 MiB，安装包约 43 MiB，具体以附件为准。
+安装包包含运行环境，为当前用户安装，无需管理员权限。便携包解压后运行 `ProxyTrafficFloat.exe`。
 
-自包含包比旧版依赖电脑运行时的小包更大，换取免安装环境和离线运行。下载体积不等于常驻内存；内存测试、测试方法和持续运行结果见 [验证报告](docs/VALIDATION.md)。
+运行目标为 Windows 10 1607+ 和 Windows 11。x64、x86 已在 Windows 11 上验证，ARM64 尚待设备实测。详细结果见 [验证报告](docs/VALIDATION.md)。
 
-## 操作
+## 快速开始
 
-悬浮窗顶部提供设置、模式切换、锁定、隐藏按钮。拖动空白区域移动窗口，接近工作区边缘时吸附；点击迷你窗临时展开。穿透开启后可以从托盘解除。
+1. 启动 Mihomo 或 Clash Verge。
+2. 安装并运行 Traffic Lens，软件会自动发现本机 Mihomo 接口。
+3. 如果连接失败，在设置中填写本机 HTTP 地址（如 `http://127.0.0.1:9090`）或命名管道，并按需输入接口密钥。
 
-默认自动展开条件：下载最快目标达到 1 MB/s，或上传最快目标达到 512 KB/s，持续 2 秒。两者都低于阈值一半持续 10 秒后收起。阈值、延时和角落停靠均可修改。
+拖动空白区域移动窗口；顶部按钮用于设置、模式切换、锁定和隐藏。点击迷你窗可临时展开，开启点击穿透后可通过小锁或托盘解锁。
 
-可分别开关总速度、上传/下载最快目标、今日总量和目标累计量。域名涉及多个程序或节点时显示“多个”，缺失程序名显示“未知”。单连接排行中的今日累计仍是该域名/IP 的当日合计。
+默认自动展开条件：下载最快目标达到 1 MB/s，或上传最快目标达到 512 KB/s，持续 2 秒；低于阈值一半持续 10 秒后收起。阈值与延时可在设置中调整。
 
-移动程序目录后，重新设置开机启动以更新路径。开机启动默认关闭。
+从托盘显示、隐藏或退出。关闭设置页后仍继续监控；语言在“连接与启动”中切换，立即生效。
 
-## 统计含义与隐私
+## 统计与隐私
 
-速度每秒采样，使用最近三秒的平均值。“监测累计”只包含软件运行期间实际观测到的字节增量；首次看到连接、断线重连及内核重启时建立新基准，避免重复计数。日期按电脑本地时间划分。
+只读取本机 Mihomo 接口，最终 DIRECT 的连接与未知链路不计入代理流量。速度每秒采样，显示最近三秒的平均值。
 
-采样间隔内完成的短连接、软件退出或接口中断期间的流量可能漏记。HTTPS 连接无法说明下载的是哪个文件，程序名是否可见取决于内核。统计用于定位来源，不能作为精确计费账单。
+“监测累计”记录软件运行期间观测到的增量，可能遗漏短连接及断线期间的流量，适合定位流量来源。进程信息取决于 Mihomo；HTTPS 连接无法识别具体下载文件。
 
-设置和 SQLite 数据库保存在 `%LOCALAPPDATA%\ProxyTrafficFloat`。只保存每日域名/IP 上传与下载量，不保存完整 URL 或完整连接历史。接口密钥由 Windows DPAPI 保护。只接受本机接口，不修改分流规则，不断开用户连接，不主动外网测速，也不上传监控统计。
+设置与统计存储在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥由 Windows DPAPI 加密。软件不上传统计、不修改分流规则。卸载后保留本机设置与记录。
 
-## 开发与打包
+## 开发
 
-开发需要 Windows 与 .NET 10 SDK；`global.json` 使用 10.0.401 并允许兼容的后续 feature band。SDK 只用于开发，成品不要求用户安装它。
+需要 Windows 与 .NET 10 SDK；生成安装包还需要 Inno Setup 6。
 
 ```powershell
-# 默认构建 x64 自包含版并运行测试
 .\build.ps1 -Runtime win-x64 -Test
-
-# 打包便携版、安装版、校验文件与整理后的源码
 .\scripts\package.ps1 -Runtime win-x64 -IncludeSource
 ```
 
-安装包构建需要 Inno Setup 6；可用 `-Compiler` 指定 `ISCC.exe`，或用 `-SkipInstaller` 只制作 ZIP。发布输出位于 `dist/`。其他架构将 `-Runtime` 改为 `win-x86` 或 `win-arm64`。可通过 GitHub Actions 构建三个架构；版本 tag 触发草稿 Release，审核后再发布。
+其他架构使用 `win-x86` 或 `win-arm64`。输出位于 `dist/`，GitHub Actions 支持三个架构的自动构建。
 
-`native/` 是常驻监控，`src/` 是独立设置页和共享统计逻辑，`tests/` 是测试，`assets/` 是原创资源。程序复用绘制资源，减少每秒采样的重复分配，并在退出时释放原生资源。
+[贡献说明](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [验证报告](docs/VALIDATION.md)
 
-提交问题或改进前请阅读 [贡献说明](CONTRIBUTING.md)。第一次上传可参考 [GitHub 发布指南](docs/FIRST-GITHUB-UPLOAD.md)，版本变化见 [更新记录](CHANGELOG.md)。
+## 许可证
 
-## 许可证与设计参考
+Copyright © 2026 **onlielll** · [MIT](LICENSE)
 
-Copyright © 2026 **onlielll**。应用源码和原创资源使用 [MIT 许可证](LICENSE)。随包运行时、开源图标及安装器工具的许可见 [第三方说明](THIRD-PARTY-NOTICES.md)。
-
-界面层级与间距参考 [ModernFlyouts](https://github.com/ModernFlyouts-Community/ModernFlyouts) 与 [Windows Fluent 设计指南](https://learn.microsoft.com/en-us/windows/apps/design/)，按钮比例参考 [Apple HIG](https://developer.apple.com/design/human-interface-guidelines/sf-symbols)。悬浮窗工具栏使用 MIT 许可的 [Heroicons](https://github.com/tailwindlabs/heroicons) 实心矢量图标，托盘图标为原创资源。
+工具栏使用 [Heroicons](https://github.com/tailwindlabs/heroicons)。随包组件的许可见 [第三方说明](THIRD-PARTY-NOTICES.md)。
