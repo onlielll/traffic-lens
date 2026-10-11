@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>ProxyTrafficSettings</AssemblyName>
+    <Version>2.0.0</Version>
+    <Product>Traffic Lens Settings</Product>
+    <Authors>onlielll</Authors>
+    <Copyright>Copyright (c) 2026 onlielll</Copyright>
+    <ApplicationIcon>..\assets\traffic.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>ProxyTrafficFloat.Program</StartupObject>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+</Project>

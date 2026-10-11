@@ -1,0 +1,37 @@
+# Build output and downloaded tools
+**/bin/
+**/obj/
+.build/
+.tools/
+app/
+dist/
+artifacts/
+便携版/
+delivery*/
+publish*/
+native-release/
+native-verified/
+verified-app/
+*.zip
+*.pdb
+
+# Private investigation and runtime data
+investigation/
+memory-probe/
+verification*/
+**/test-session/
+*.sqlite*
+*.jsonl
+*.log
+**/settings.json
+**/live.json
+**/last-exit.json
+**/clear.signal
+
+# Per-user editor files
+.vs/
+*.user
+*.suo
+
+# Draft preparation folder is not part of the public repository
+release-docs-draft/

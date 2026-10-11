@@ -1,0 +1,5 @@
+# Normalize text in Git; keep images and generated vector data byte-for-byte.
+* text=auto
+*.png binary
+*.ico binary
+*.bin binary
