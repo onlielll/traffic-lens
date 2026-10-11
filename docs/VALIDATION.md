@@ -13,6 +13,7 @@
 - 开关动画实际取样：x64 位移 16→1.178→0，x86 16→1.169→0，160 ms 过渡；语言切换即时更新现有控件。
 - 修复 Windows 内置 winsqlite3 的 x86 stdcall 调用约定。补充有数据的统计查询后，32 位设置页与核心测试正常。详见 [SQLite 维护者说明](https://sqlite.org/forum/info/2438e82a4d236c48)。
 - 最终 x64 安装与卸载均返回成功；安装后的程序与发布目录校验一致。卸载前后，本机设置和统计文件的 SHA-256 完全一致。随后安装到当前用户程序目录并创建桌面快捷方式。
+- GitHub Actions 首次独立构建通过：x64、x86、ARM64 均生成自包含安装包、便携包及校验文件；x64 构建包含核心测试。见 [构建记录](https://github.com/onlielll/traffic-lens/actions/runs/38122574639)。这不是 ARM64 硬件运行验收。
 
 ## 内存与体积 · Memory and package size
 
@@ -27,6 +28,6 @@
 
 - 最终版本一小时连续运行、内存与句柄趋势。
 - 跨电脑兼容性：Windows 10、真实 32 位设备和 ARM64 设备实测。
-- 首次 GitHub 上传与 Release；仓库已由所有者创建，正在验证上传授权和发布流程。
+- 首次预览 Release 附件与发布；源码及中英文说明已上传公开仓库，等待一小时测试结果后整理附件。
 
-These are stage results, not a guarantee of zero leaks or universal compatibility. Final x64 installation and uninstallation preserve user data. The final one-hour soak, other-device checks and first GitHub upload are still pending.
+These are stage results, not a guarantee of zero leaks or universal compatibility. Final x64 installation and uninstallation preserve user data, and all three GitHub Actions build jobs pass. The final one-hour soak, other-device checks and preview release attachments are still pending.
