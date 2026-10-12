@@ -181,18 +181,19 @@ public sealed class MonitorApp : Application
         Store.Add(new[] { new Increment(DateTime.Today, "downloads.example", 186L * 1024 * 1024, 2048), new Increment(DateTime.Today, "uploads.example", 4096, 24L * 1024 * 1024) });
         Config.RecordTimeline = true;
         Save();
-        var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60 * 60;
+        long end = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var buckets = new List<TimelineBucket>();
-        for (int i = 1; i < 60; i++)
+        for (int i = 1; i < 1800; i++)
         {
-            if (i is 25 or 26 or 27) continue;
-            long time = minute - i * 60;
-            long d = (long)((0.3 + Math.Pow(Math.Sin(i * 0.11), 8) * 2.5) * 60 * 1024 * 1024);
-            long u = (long)((0.05 + Math.Pow(Math.Cos(i * 0.14), 8) * 0.7) * 60 * 1024 * 1024);
-            foreach (var item in new[] { ("", d, u, 60.0), ("downloads.example", d, 0L, 0.0), ("uploads.example", 0L, u, 0.0) })
+            if (i is >= 700 and <= 750) continue;
+            long time = end-i;
+            double peak=Math.Exp(-Math.Pow((i-180)/25.0,2))+Math.Exp(-Math.Pow((i-550)/70.0,2))*0.65;
+            long d=(long)((0.025+peak*2.5+Math.Pow(Math.Sin(i*0.025),8)*0.16)*1024*1024);
+            long u=(long)((0.01+Math.Exp(-Math.Pow((i-300)/35.0,2))*1.2+Math.Pow(Math.Cos(i*0.017),8)*0.06)*1024*1024);
+            foreach (var item in new[] { ("",d,u,1.0), ("downloads.example",d,0L,0.0), ("uploads.example",0L,u,0.0) })
             {
-                var bucket = new TimelineBucket(time, item.Item1);
-                bucket.Add(item.Item2, item.Item3, item.Item4, time * 1000, (time + 60) * 1000);
+                var bucket = new TimelineBucket(time,item.Item1);
+                bucket.Add(item.Item2,item.Item3,item.Item4,time*1000,(time+1)*1000);
                 buckets.Add(bucket);
             }
         }
@@ -204,6 +205,8 @@ public sealed class MonitorApp : Application
             await Task.Delay(600);
             await settings!.CheckToggleAnimationAsync(output);
             settings.SelectPage(2);
+            settings.ShowTimeline();
+            await Task.Delay(150);
             settings.VerifyTimelineForTest(output);
             foreach (string language in new[] { "zh-CN", "en" })
             {
@@ -233,6 +236,17 @@ public sealed class MonitorApp : Application
                 settings.ScrollCurrentToEnd();
                 await Task.Delay(100);
                 SavePage($"settings-{language}-about.png");
+            }
+            settings!.Width=820; settings.Height=650;
+            foreach(string language in new[]{"zh-CN","en"})
+            {
+                settings.SetLanguage(language); settings.SelectPage(2); settings.ShowTimeline();
+                foreach (string theme in new[] { "light", "dark" })
+                {
+                    settings.SetTheme(theme); await Task.Delay(200);
+                    settings.PreviewTimelineForTest(); await Task.Delay(150);
+                    SavePage("timeline-interaction-"+language+"-"+theme+".png");
+                }
             }
             File.WriteAllText(Path.Combine(output, "settings-test.txt"), "PASS: Chinese/English, four pages at normal and compact sizes, instant language change, toggle animation, isolated example data\n");
         }

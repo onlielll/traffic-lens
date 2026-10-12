@@ -1,16 +1,10 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <!-- Settings-only theme. Short toggle transitions have no clocks in the resident. -->
-  <SolidColorBrush x:Key="Canvas">#10151E</SolidColorBrush>
-  <SolidColorBrush x:Key="Surface">#18202D</SolidColorBrush>
-  <SolidColorBrush x:Key="Line">#2A3546</SolidColorBrush>
-  <SolidColorBrush x:Key="Ink">#EEF3FB</SolidColorBrush>
-  <SolidColorBrush x:Key="Muted">#94A2BA</SolidColorBrush>
-  <SolidColorBrush x:Key="Accent">#62D8BD</SolidColorBrush>
 
   <Style TargetType="Button">
     <Setter Property="Foreground" Value="{StaticResource Ink}"/>
-    <Setter Property="Background" Value="#273448"/>
+    <Setter Property="Background" Value="{StaticResource Control}"/>
     <Setter Property="BorderBrush" Value="Transparent"/>
     <Setter Property="BorderThickness" Value="1"/>
     <Setter Property="Padding" Value="14,9"/>
@@ -33,7 +27,7 @@
   </Style>
   <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
     <Setter Property="Background" Value="{StaticResource Accent}"/>
-    <Setter Property="Foreground" Value="#10241F"/>
+    <Setter Property="Foreground" Value="{StaticResource AccentInk}"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
   </Style>
   <Style TargetType="CheckBox">
@@ -42,9 +36,9 @@
     <Setter Property="Template"><Setter.Value>
       <ControlTemplate TargetType="CheckBox">
         <Grid Width="38" Height="22">
-          <Border x:Name="Track" CornerRadius="11" BorderThickness="1" BorderBrush="#46536B">
-            <Border.Background><SolidColorBrush Color="#313D51"/></Border.Background>
-            <Ellipse x:Name="Knob" Width="14" Height="14" Fill="#F4F8FE" Margin="3" HorizontalAlignment="Left">
+          <Border x:Name="Track" CornerRadius="11" BorderThickness="1" BorderBrush="{StaticResource ControlBorder}">
+            <Border.Background><SolidColorBrush Color="{StaticResource ToggleOffColor}"/></Border.Background>
+            <Ellipse x:Name="Knob" Width="14" Height="14" Fill="{StaticResource Knob}" Margin="3" HorizontalAlignment="Left">
               <Ellipse.RenderTransform><TranslateTransform x:Name="KnobPosition"/></Ellipse.RenderTransform>
             </Ellipse>
           </Border>
@@ -56,26 +50,26 @@
               <DoubleAnimation Storyboard.TargetName="KnobPosition" Storyboard.TargetProperty="X" To="16" Duration="0:0:0.16">
                 <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
               </DoubleAnimation>
-              <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="#62D8BD" Duration="0:0:0.16"/>
+              <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="{StaticResource AccentColor}" Duration="0:0:0.16"/>
             </Storyboard></BeginStoryboard></Trigger.EnterActions>
             <Trigger.ExitActions><BeginStoryboard><Storyboard>
               <DoubleAnimation Storyboard.TargetName="KnobPosition" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.16">
                 <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
               </DoubleAnimation>
-              <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="#313D51" Duration="0:0:0.16"/>
+              <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="{StaticResource ToggleOffColor}" Duration="0:0:0.16"/>
             </Storyboard></BeginStoryboard></Trigger.ExitActions>
           </Trigger>
           <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Track" Property="Opacity" Value="0.85"/></Trigger>
-          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="#EEF3FB"/></Trigger>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource Ink}"/></Trigger>
           <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate>
     </Setter.Value></Setter>
   </Style>
   <Style TargetType="TextBox">
-    <Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Background" Value="#101722"/>
+    <Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Background" Value="{StaticResource Input}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="CaretBrush" Value="{StaticResource Accent}"/>
-    <Setter Property="SelectionBrush" Value="#365A67"/><Setter Property="Padding" Value="11,8"/>
+    <Setter Property="SelectionBrush" Value="{StaticResource Selection}"/><Setter Property="Padding" Value="11,8"/>
     <Setter Property="Template"><Setter.Value>
       <ControlTemplate TargetType="TextBox">
         <Border x:Name="Shell" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="7">
@@ -89,7 +83,7 @@
     </Setter.Value></Setter>
   </Style>
   <Style TargetType="PasswordBox">
-    <Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Background" Value="#101722"/>
+    <Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Background" Value="{StaticResource Input}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="CaretBrush" Value="{StaticResource Accent}"/>
     <Setter Property="Padding" Value="11,8"/>
     <Setter Property="Template"><Setter.Value>
@@ -107,18 +101,18 @@
     <Setter Property="Template"><Setter.Value>
       <ControlTemplate TargetType="ComboBox">
         <Grid>
-          <ToggleButton x:Name="Toggle" BorderBrush="#344257" Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+          <ToggleButton x:Name="Toggle" BorderBrush="{StaticResource ControlBorder}" Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
             <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
-              <Border x:Name="Face" Background="#222E40" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="7">
-                <Path Data="M 0 0 L 4 4 L 8 0" Stroke="#94A2BA" StrokeThickness="1.4" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <Border x:Name="Face" Background="{StaticResource Control}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="7">
+                <Path Data="M 0 0 L 4 4 L 8 0" Stroke="{StaticResource Muted}" StrokeThickness="1.4" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"/>
               </Border>
-              <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#2B3A50"/></Trigger></ControlTemplate.Triggers>
+              <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="{StaticResource ControlHover}"/></Trigger></ControlTemplate.Triggers>
             </ControlTemplate></ToggleButton.Template>
           </ToggleButton>
           <ContentPresenter x:Name="Selection" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" IsHitTestVisible="False" Margin="11,8,32,8" VerticalAlignment="Center"/>
           <TextBox x:Name="PART_EditableTextBox" Visibility="Collapsed" Style="{x:Null}" Background="Transparent" Foreground="{TemplateBinding Foreground}" BorderThickness="0" Padding="0" Margin="11,6,32,6" VerticalContentAlignment="Center" IsReadOnly="{TemplateBinding IsReadOnly}"/>
           <Popup x:Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
-            <Border Background="#222E40" BorderBrush="#344257" BorderThickness="1" CornerRadius="8" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Padding="5">
+            <Border Background="{StaticResource Control}" BorderBrush="{StaticResource ControlBorder}" BorderThickness="1" CornerRadius="8" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Padding="5">
               <ScrollViewer MaxHeight="240" CanContentScroll="True"><ItemsPresenter/></ScrollViewer>
             </Border>
           </Popup>
@@ -136,7 +130,7 @@
       <ControlTemplate TargetType="ComboBoxItem">
         <Border x:Name="Item" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border>
         <ControlTemplate.Triggers>
-          <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Item" Property="Background" Value="#354961"/></Trigger>
+          <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Item" Property="Background" Value="{StaticResource ControlHover}"/></Trigger>
           <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{StaticResource Accent}"/></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate>
@@ -150,9 +144,9 @@
       <ControlTemplate TargetType="Slider">
         <Grid Height="24">
           <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}" Orientation="Horizontal" IsDirectionReversed="False">
-            <Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" Background="#62D8BD" CornerRadius="2"/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
-            <Track.Thumb><Thumb x:Name="Knob"><Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse Width="13" Height="13" Fill="#EEF3FB" Stroke="#62D8BD" StrokeThickness="1"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
-            <Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" Background="#35445A" CornerRadius="2"/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+            <Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" Background="{StaticResource Accent}" CornerRadius="2"/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+            <Track.Thumb><Thumb x:Name="Knob"><Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse Width="13" Height="13" Fill="{StaticResource Ink}" Stroke="{StaticResource Accent}" StrokeThickness="1"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+            <Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" Background="{StaticResource Line}" CornerRadius="2"/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
           </Track>
         </Grid>
         <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Knob" Property="Opacity" Value="0.7"/></Trigger></ControlTemplate.Triggers>
@@ -166,7 +160,7 @@
         <Grid Background="Transparent">
           <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}" ViewportSize="{TemplateBinding ViewportSize}" IsDirectionReversed="True">
             <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
-            <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="#394960" CornerRadius="4" Margin="1,0"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+            <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{StaticResource ControlBorder}" CornerRadius="4" Margin="1,0"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
             <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
           </Track>
         </Grid>
@@ -175,16 +169,16 @@
   </Style>
   <Style TargetType="ScrollViewer"><Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/></Style>
   <Style TargetType="ToolTip">
-    <Setter Property="Background" Value="#222E40"/><Setter Property="Foreground" Value="{StaticResource Ink}"/>
+    <Setter Property="Background" Value="{StaticResource Control}"/><Setter Property="Foreground" Value="{StaticResource Ink}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="Padding" Value="10,7"/><Setter Property="MaxWidth" Value="420"/>
   </Style>
   <Style TargetType="ListView">
-    <Setter Property="Background" Value="#18202D"/><Setter Property="Foreground" Value="{StaticResource Ink}"/>
+    <Setter Property="Background" Value="{StaticResource Surface}"/><Setter Property="Foreground" Value="{StaticResource Ink}"/>
     <Setter Property="BorderThickness" Value="0"/><Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
     <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/><Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
   </Style>
   <Style TargetType="GridViewColumnHeader">
-    <Setter Property="Foreground" Value="{StaticResource Muted}"/><Setter Property="Background" Value="#202B3C"/>
+    <Setter Property="Foreground" Value="{StaticResource Muted}"/><Setter Property="Background" Value="{StaticResource Header}"/>
     <Setter Property="Padding" Value="12,11"/>
     <Setter Property="Template"><Setter.Value>
       <ControlTemplate TargetType="GridViewColumnHeader"><Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Left"/></Border></ControlTemplate>
@@ -195,12 +189,12 @@
     <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
     <Setter Property="Template"><Setter.Value>
       <ControlTemplate TargetType="ListViewItem">
-        <Border x:Name="Row" Background="Transparent" Padding="{TemplateBinding Padding}" BorderBrush="#243043" BorderThickness="0,0,0,1">
+        <Border x:Name="Row" Background="Transparent" Padding="{TemplateBinding Padding}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
           <GridViewRowPresenter Content="{TemplateBinding Content}" Columns="{Binding View.Columns, RelativeSource={RelativeSource AncestorType=ListView}}"/>
         </Border>
         <ControlTemplate.Triggers>
-          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Row" Property="Background" Value="#233247"/></Trigger>
-          <Trigger Property="IsSelected" Value="True"><Setter TargetName="Row" Property="Background" Value="#2A4054"/></Trigger>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Row" Property="Background" Value="{StaticResource ControlHover}"/></Trigger>
+          <Trigger Property="IsSelected" Value="True"><Setter TargetName="Row" Property="Background" Value="{StaticResource Selection}"/></Trigger>
           <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Row" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate>

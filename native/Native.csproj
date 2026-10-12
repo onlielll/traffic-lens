@@ -18,6 +18,7 @@
     <RuntimeHostConfigurationOption Include="System.GC.Server" Value="false" />
     <Compile Include="..\src\Core.cs" Link="Core.cs" />
     <Compile Include="..\src\Timeline.cs" Link="Timeline.cs" />
+    <Compile Include="..\src\AppTheme.cs" Link="AppTheme.cs" />
     <Compile Include="..\src\Storage.cs" Link="Storage.cs" />
     <Compile Include="..\src\Strings.cs" Link="Strings.cs" />
     <Compile Include="..\src\SettingsJson.cs" Link="SettingsJson.cs" />

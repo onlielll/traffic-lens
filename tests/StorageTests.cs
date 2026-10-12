@@ -19,6 +19,17 @@ public static class StorageTests
     [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.StdCall)]
     static extern void sqlite3_free(IntPtr pointer);
 
+    public static void Execute(string path, string sql)
+    {
+        if(sqlite3_open(path,out var database)!=0) throw new Exception("Cannot open fixture database.");
+        try
+        {
+            int result=sqlite3_exec(database,sql,IntPtr.Zero,IntPtr.Zero,out var error);
+            if(error!=IntPtr.Zero) sqlite3_free(error);
+            if(result!=0) throw new Exception("Cannot write SQL fixture.");
+        }
+        finally { sqlite3_close(database); }
+    }
     public static void Run()
     {
         string path = Path.Combine(Path.GetTempPath(), "ProxyTrafficFloat-rollback-" + Guid.NewGuid() + ".sqlite");

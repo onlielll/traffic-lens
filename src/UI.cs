@@ -15,14 +15,35 @@ namespace ProxyTrafficFloat;
 
 public static class Ui
 {
-    public static readonly Brush Background = Brush("#10151E");
-    public static readonly Brush Panel = Brush("#18202D");
-    public static readonly Brush Line = Brush("#2A3546");
-    public static readonly Brush Text = Brush("#EEF3FB");
-    public static readonly Brush Muted = Brush("#94A2BA");
-    public static readonly Brush Down = Brush("#62D8BD");
-    public static readonly Brush Up = Brush("#B1A3F9");
-    public static readonly Brush Selected = Brush("#253B48");
+    // Mutable shared brushes keep existing controls alive when the palette changes.
+    static readonly Dictionary<string, SolidColorBrush> Palette = new();
+    static readonly Dictionary<string, ThemeColor> ColorSlots = new();
+    sealed class ThemeColor : DependencyObject
+    {
+        public static readonly DependencyProperty ValueProperty=DependencyProperty.Register(nameof(Value),typeof(Color),typeof(ThemeColor));
+        public Color Value { get => (Color)GetValue(ValueProperty); set => SetValue(ValueProperty,value); }
+    }
+    public static Brush Background => PaletteBrush("Canvas");
+    public static Brush Panel => PaletteBrush("Surface");
+    public static Brush Line => PaletteBrush("Line");
+    public static Brush Text => PaletteBrush("Ink");
+    public static Brush Muted => PaletteBrush("Muted");
+    public static Brush Down => PaletteBrush("Accent");
+    public static Brush Up => PaletteBrush("Upload");
+    public static Brush Selected => PaletteBrush("Selection");
+    public static SolidColorBrush PaletteBrush(string key)
+    {
+        if (!Palette.TryGetValue(key, out var brush))
+        {
+            var color=new ThemeColor { Value=Color(key) }; ColorSlots.Add(key,color);
+            brush=new SolidColorBrush();
+            // A color binding prevents WPF templates from freezing shared palette brushes.
+            System.Windows.Data.BindingOperations.SetBinding(brush,SolidColorBrush.ColorProperty,new System.Windows.Data.Binding("Value") { Source=color });
+            Palette.Add(key,brush);
+        }
+        return brush;
+    }
+    static Color Color(string key) { uint c=AppTheme.Color(key); return System.Windows.Media.Color.FromRgb((byte)(c>>16),(byte)(c>>8),(byte)c); }
 
     // Icons are original vector outlines, shared and frozen once per settings process.
     static readonly Dictionary<string, Geometry> Icons = new()
@@ -81,9 +102,20 @@ public static class Ui
         return button;
     }
 
-    public static void Theme(Window window)
+    public static void Theme(Window window, string mode, bool systemChanged = false)
     {
+        bool changed = AppTheme.Apply(mode, systemChanged);
+        if (!changed && window.Resources.MergedDictionaries.Count != 0) return;
+        foreach (string key in AppTheme.Colors.Keys)
+        {
+            var brush=PaletteBrush(key); ColorSlots[key].Value=Color(key);
+            window.Resources[key]=brush;
+            Application.Current.Resources[key]=brush;
+            window.Resources[key+"Color"]=brush.Color;
+            Application.Current.Resources[key+"Color"]=brush.Color;
+        }
         string assembly = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name!;
+        window.Resources.MergedDictionaries.Clear();
         window.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
             Source = new Uri("/" + assembly + ";component/Theme.xaml", UriKind.Relative)
@@ -202,7 +234,7 @@ public sealed class SettingsWindow : Window
     public SettingsWindow(MonitorApp app)
     {
         this.app = app;
-        Ui.Theme(this);
+        Ui.Theme(this, app.Config.ColorMode);
         Strings.UseLanguage(app.Config.Language);
         Title = Strings.T("Traffic Lens · 代理流量");
         Width = 820;
@@ -276,6 +308,23 @@ public sealed class SettingsWindow : Window
         WindowChrome.SetIsHitTestVisibleInChrome(close, true);
         DockPanel.SetDock(close, Dock.Right);
         caption.Children.Add(close);
+        var appearance = Ui.Button("◐", (_, _) => { });
+        appearance.Width = 34; appearance.Height = 30; appearance.Padding = new Thickness(4);
+        appearance.Background = Brushes.Transparent; appearance.FontSize = 19;
+        AccessibleName(appearance, "切换主题");
+        WindowChrome.SetIsHitTestVisibleInChrome(appearance, true);
+        appearance.Click += (_, _) =>
+        {
+            var menu = new ContextMenu { Background=Ui.Panel, Foreground=Ui.Text, BorderBrush=Ui.Line };
+            foreach (var option in new[] { ("system", "跟随系统"), ("light", "浅色"), ("dark", "深色") })
+            {
+                var item = new MenuItem { Header = Strings.T(option.Item2), IsCheckable = true, IsChecked = app.Config.ColorMode == option.Item1 };
+                item.Click += (_, _) => SetTheme(option.Item1);
+                menu.Items.Add(item);
+            }
+            menu.PlacementTarget = appearance; menu.IsOpen = true;
+        };
+        DockPanel.SetDock(appearance, Dock.Right); caption.Children.Add(appearance);
         var brand = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         brand.Children.Add(Ui.Icon("traffic", 19, Ui.Down));
         var brandText = Ui.Label("TRAFFIC LENS", 11, Ui.Text);
@@ -478,7 +527,7 @@ public sealed class SettingsWindow : Window
         selectors.Children.Add(range);
         selectors.Children.Add(sort);
 
-        Toggle(page, "记录流量时间线", "按分钟保存代理总量和各目标的上下行数据，保留 7 天。默认关闭。",
+        Toggle(page, "记录流量时间线", "逐秒记录代理总量和各目标，保留最近 24 小时。默认关闭。",
             () => app.Config.RecordTimeline, value => { app.Config.RecordTimeline = value; timeline?.Refresh(true); });
         var history = Section("时间线", "选择目标或输入域名/IP；在曲线上查看时间与数值。");
         timeline = new TimelinePanel(app, Changed);
@@ -515,8 +564,8 @@ public sealed class SettingsWindow : Window
                 RefreshRows();
             }
         });
-        clear.Foreground = Ui.Brush("#ECA4AB");
-        clear.Background = Ui.Brush("#352733");
+        clear.Foreground = Ui.PaletteBrush("Danger");
+        clear.Background = Ui.PaletteBrush("DangerBackground");
         clear.HorizontalAlignment = HorizontalAlignment.Left;
         page.Children.Add(clear);
         page.Children.Add(Ui.Label("仅记录监测期间的有效增量。短连接可能漏记，断线期间不补算；用于定位来源，不作为精确账单。", 11, Ui.Muted));
@@ -589,7 +638,7 @@ public sealed class SettingsWindow : Window
     IntPtr Hook(IntPtr hwnd, int message, IntPtr w, IntPtr l, ref bool handled)
     {
         if (message is 0x02E0 or 0x007E or 0x001A)
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(FitScreen));
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => { FitScreen(); Ui.Theme(this, app.Config.ColorMode, true); timeline?.ApplyTheme(); }));
         return IntPtr.Zero;
     }
 
@@ -700,6 +749,7 @@ public sealed class SettingsWindow : Window
 
     public void ShowTimeline() => timeline?.BringIntoView();
     public void VerifyTimelineForTest(string output) => timeline?.VerifyForTest(output);
+    public void PreviewTimelineForTest() => timeline?.PreviewForTest();
 
     public void ScrollCurrentToEnd()
     {
@@ -813,8 +863,18 @@ public sealed class SettingsWindow : Window
         parent.Children.Add(grid);
     }
 
+    public void SetTheme(string mode)
+    {
+        app.Config.ColorMode = AppTheme.Normalize(mode);
+        Ui.Theme(this, app.Config.ColorMode);
+        timeline?.ApplyTheme();
+        Changed();
+    }
+
     void Refresh()
     {
+        Ui.Theme(this, app.Config.ColorMode);
+        timeline?.ApplyTheme();
         if (Strings.Language != app.Config.Language) { ApplyLanguage(); return; }
         syncing = true;
         foreach (var pair in checks) pair.Box.IsChecked = pair.Value();

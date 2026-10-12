@@ -1,16 +1,29 @@
 # 验证报告 · Validation
 
-## 2.1.0 时间线 · 2026-10-12
+## 2.1.0 时间线与主题 · 2026-10-12
 
-- x64 与 x86 的核心、存储、接口及展示回归通过；时间线新增 30 项断言，覆盖开关基准、观测覆盖时长、时间戳、分钟边界与舍入、目标筛选、断线、休眠、清空和七天保留。
-- 连续模拟 10,000 次采样，当前分钟缓冲最多 11 项（十个轮换目标与总量），未保留完整逐秒历史。
-- 中英文界面在 820×650 与 520×360 检查，目标可输入；本地时区转换正确，重复刷新 100 次复用同一图表，点数不增长。设置窗口关闭后子进程退出。
-- x64 与 x86 的原生测试完成 10,000 次绘制与 100 次窗口切换，GDI 对象 27→27。
-- 开启时间线、使用本机接口进行 300 秒隔离运行，成功读取 300 次，失败 0 次；私有工作集 9.96–25.2 MiB，GDI 对象 27–27。未强制 GC 或清空工作集。
-- OxyPlot 三个设置页组件共 796,160 字节（约 0.76 MiB），不加入常驻程序的依赖。
-- 三个架构均完成自包含构建。Windows 10 与 ARM64 仍待实机验证。此次新功能的短时运行观察不能替代一小时或更长的运行验证。
+- x64 与 x86 通过 49 项核心、192 项展示逻辑及 47 项时间线断言，覆盖秒级/分钟聚合、区间总量、目标筛选、24 小时滚动删除、旧分钟精度、保存失败回滚与恢复、断线、休眠和清空。
+- 连续模拟 10,000 次采样，秒级历史保存到磁盘；常驻内存只保留五秒批次，保存失败也不会留下无限增长的重试队列。
+- 中英文界面检查 820×650 与 520×360；悬停同时显示上下行，目标可输入，本地时间正确。100 次刷新及明暗主题切换保持缩放、筛选和区间选择，复用同一图表，显示点数和标注数量有界。
+- 原生界面测试包含 10,000 次绘制、100 次尺寸/模式切换及 100 次主题切换。首次两种颜色预热后，主题循环的 GDI 对象恒定；独立设置窗口关闭后进程退出。
+- 新记录与图表共用原有一秒采样，不增加外网测速、图表后台采样或常驻 WPF。OxyPlot 组件只在设置进程加载。
+- 开启秒级记录、通过本机接口进行 300 秒隔离运行：成功 300 次，失败 0 次，GDI 对象始终为 27。运行后段的八次私有工作集测量为 22.32–26.98 MiB，未强制 GC 或清空工作集。
 
-The optional timeline passed 30 checks, a 10,000-sample bounded-buffer simulation, bilingual chart checks and a five-minute live run. Chart dependencies are confined to the settings process. Long-duration validation of the new feature remains pending.
+### 存储与查询实测
+
+Windows 11 build 26200，五秒一次事务，连续写入模拟目标；关闭数据库后测量 SQLite 文件。查询包含总量或指定目标，并按可见范围聚合。
+
+| 持续活跃目标 | 模拟时长 | 数据库 | 五秒写入批次均值 / P95 | 总量 / 单目标查询 |
+| --- | --- | --- | --- | --- |
+| 0 | 30 分钟 | 0.06 MiB | 2.01 / 2.08 ms | 3.03 / 1.61 ms |
+| 5 | 完整 24 小时 | 14.40 MiB | 2.53 / 3.07 ms | 41.02 / 56.26 ms |
+| 20 | 30 分钟 | 1.17 MiB | 3.47 / 4.93 ms | 2.01 / 2.25 ms |
+
+20 个持续活跃目标按此数据线性估算约 56.25 MiB/天，属于估算。空闲时只保存观测覆盖信息，没有目标明细；目标名称复用整数 ID。滚动删除后的空页供后续记录复用，文件不必每天缩小。
+
+三种架构均完成自包含构建。x64、x86 在本机验证，Windows 10 与 ARM64 仍待实机验证。五分钟观察、重复交互和模拟一天的数据不能替代新功能的一小时或更长实机运行。
+
+The optional timeline retains complete second-level records for 24 hours. Tests cover exact interval totals, zoom aggregation, legacy precision, bounded batches and themes. A full-day simulation with five active targets used 14.40 MiB; the full-day chart query took 41.02 ms. Long-duration validation of this new feature remains pending.
 
 ## 2.0.0 基线结果
 

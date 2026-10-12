@@ -8,7 +8,8 @@ namespace ProxyTrafficFloat.Native;
 public sealed class Canvas : IDisposable
 {
     IntPtr dc, bitmap, oldBitmap;
-    readonly IntPtr background, surface;
+    IntPtr background, surface;
+    int themeVersion;
     IntPtr border, downPen, upPen, linePen;
     int width, height;
     double scale;
@@ -18,19 +19,21 @@ public sealed class Canvas : IDisposable
     readonly HeaderGlyphs glyphs = new();
 
     // Win32 COLORREF stores colors in BGR order; this matches the settings palette.
-    const uint Ink = 0xFBF3EE;
-    const uint Muted = 0xBAA294;
-    const uint Down = 0xBDD862;
-    const uint Up = 0xF9A3B1;
-    const uint Line = 0x594437;
+    uint Ink => AppTheme.Bgr("Ink");
+    uint Muted => AppTheme.Bgr("Muted");
+    uint Down => AppTheme.Bgr("Accent");
+    uint Up => AppTheme.Bgr("Upload");
+    uint Line => AppTheme.Bgr("Line");
 
     public Canvas()
     {
         var screen = Win.GetDC(IntPtr.Zero);
         dc = Win.CreateCompatibleDC(screen);
         Win.ReleaseDC(IntPtr.Zero, screen);
-        background = Win.CreateSolidBrush(0x1E1510);
-        surface = Win.CreateSolidBrush(0x2D2018);
+        AppTheme.Apply("system");
+        background = Win.CreateSolidBrush(AppTheme.Bgr("Canvas"));
+        surface = Win.CreateSolidBrush(AppTheme.Bgr("Surface"));
+        themeVersion = AppTheme.Version;
         Win.SetBkMode(dc, 1);
     }
 
@@ -117,7 +120,7 @@ public sealed class Canvas : IDisposable
     void Stroke(uint color, params ReadOnlySpan<(double X, double Y)> points)
     {
         // Inline points stay on the stack; DPI-aware color pens are cached for the canvas lifetime.
-        IntPtr pen = color switch { Down => downPen, Up => upPen, _ => linePen };
+        IntPtr pen = color == Down ? downPen : color == Up ? upPen : linePen;
         var previous = Win.SelectObject(dc, pen);
         for (int i = 0; i < points.Length; i++)
             path[i] = new Win.Point { X = P(points[i].X), Y = P(points[i].Y) };
@@ -135,6 +138,15 @@ public sealed class Canvas : IDisposable
 
     public void Render(NativeFrame frame, Settings config, bool mini, int hoverButton = -1)
     {
+        AppTheme.Apply(config.ColorMode);
+        if (themeVersion != AppTheme.Version)
+        {
+            Win.SelectObject(dc, Win.GetStockObject(5));
+            Win.DeleteObject(background); Win.DeleteObject(surface);
+            background=Win.CreateSolidBrush(AppTheme.Bgr("Canvas"));
+            surface=Win.CreateSolidBrush(AppTheme.Bgr("Surface"));
+            RebuildPens(); themeVersion=AppTheme.Version;
+        }
         if (englishFonts != Strings.IsEnglish)
         {
             ClearFonts();

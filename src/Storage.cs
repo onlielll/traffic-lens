@@ -12,6 +12,7 @@ namespace ProxyTrafficFloat;
 public sealed class Settings
 {
     public string Language { get; set; } = "auto";
+    public string ColorMode { get; set; } = "system";
     public bool Visible { get; set; } = true;
     public bool ShowSpeed { get; set; } = true;
     public bool ShowDownload { get; set; } = true;
@@ -64,6 +65,7 @@ public sealed class Settings
         {
             var settings = JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJson.Default.Settings) ?? new();
             settings.Language = Strings.NormalizeLanguage(settings.Language);
+            settings.ColorMode = AppTheme.Normalize(settings.ColorMode);
             // Settings can be edited outside the app. Bound values before they reach window geometry or timers.
             settings.Opacity = Clamp(settings.Opacity, 0.35, 1, 0.92);
             settings.UiScale = Clamp(settings.UiScale, 0.8, 1.25, 1);
@@ -188,7 +190,11 @@ public sealed partial class TrafficStore : IDisposable
                 "download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(day,target));" +
                 "CREATE TABLE IF NOT EXISTS timeline(minute INTEGER NOT NULL,target TEXT NOT NULL," +
                 "download INTEGER NOT NULL,upload INTEGER NOT NULL,seconds REAL NOT NULL,first INTEGER NOT NULL,last INTEGER NOT NULL," +
-                "PRIMARY KEY(minute,target));");
+                "PRIMARY KEY(minute,target));" +
+                "CREATE TABLE IF NOT EXISTS timeline_names(id INTEGER PRIMARY KEY,target TEXT NOT NULL UNIQUE);" +
+                "CREATE TABLE IF NOT EXISTS timeline_seconds(stamp INTEGER PRIMARY KEY,download INTEGER NOT NULL,upload INTEGER NOT NULL,seconds REAL NOT NULL);" +
+                "CREATE TABLE IF NOT EXISTS timeline_target_seconds(stamp INTEGER NOT NULL,target_id INTEGER NOT NULL,download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(stamp,target_id)) WITHOUT ROWID;" +
+                "CREATE INDEX IF NOT EXISTS timeline_target_time ON timeline_target_seconds(target_id,stamp);");
             Prune(DateTime.Today);
             PruneTimeline(DateTimeOffset.UtcNow);
         }
@@ -268,7 +274,7 @@ public sealed partial class TrafficStore : IDisposable
         Query(DateTime.Today, DateTime.Today).ToDictionary(row => row.Target, row => new Amount(row.Download, row.Upload));
 
     public void Prune(DateTime today) => Exec($"DELETE FROM daily WHERE day<{Quote(today.Date.AddDays(-29).ToString("yyyy-MM-dd"))};");
-    public void Clear() => Transaction("BEGIN IMMEDIATE;DELETE FROM daily;DELETE FROM timeline;COMMIT;");
+    public void Clear() => Transaction("BEGIN IMMEDIATE;DELETE FROM daily;DELETE FROM timeline;DELETE FROM timeline_target_seconds;DELETE FROM timeline_seconds;DELETE FROM timeline_names;COMMIT;");
 
     public void Dispose()
     {

@@ -73,10 +73,40 @@ public static class TimelineTests
                 maxBuffer = Math.Max(maxBuffer, recorder.BufferedTargets);
             }
             recorder.Flush();
-            Equal(11, maxBuffer, "buffer stays bounded over 10000 samples");
-            Equal(10000, store.QueryTimeline(start, end, "").Sum(x => x.Download), "long stream preserves bytes");
+            Check(maxBuffer <= 6, "five-second buffer stays bounded over 10000 samples");
+            var seconds = store.QueryTimeline(start, end, "", 1);
+            Equal(10000, seconds.Count, "seconds remain available after minute aggregation");
+            var interval = store.QueryTimelineTotals(start.AddSeconds(100).ToUnixTimeSeconds(), start.AddSeconds(107).ToUnixTimeSeconds(), "");
+            Equal(7, interval.Download, "exact raw interval download"); Equal(14, interval.Upload, "exact raw interval upload"); Equal(7, interval.Seconds, "exact interval coverage");
+            var targetInterval = store.QueryTimelineTotals(start.AddSeconds(100).ToUnixTimeSeconds(),start.AddSeconds(107).ToUnixTimeSeconds(), "target-1");
+            Equal(1, targetInterval.Download, "interval target filter");
+            store.PruneTimeline(start.AddHours(24).AddSeconds(100));
+            Equal(9900, store.QueryTimeline(start,end,"",1).Count, "rolling 24-hour retention boundary");
+            Equal(9900, store.QueryTimeline(start, end, "").Sum(x => x.Download), "retained stream preserves bytes");
             store.PruneTimeline(start.AddDays(8));
-            Equal(0, store.QueryTimeline(start, end, "").Count, "seven-day retention");
+            Equal(0, store.QueryTimeline(start, end, "").Count, "expired history deleted");
+            store.Clear(); recorder.Clear();
+            long stamp=start.ToUnixTimeSeconds();
+            StorageTests.Execute(path,$"INSERT INTO timeline VALUES({stamp},'',120,30,60,{stamp*1000},{(stamp+60)*1000});INSERT INTO timeline VALUES({stamp},'legacy.test',120,30,0,{stamp*1000},{(stamp+60)*1000});");
+            var legacy=store.QueryTimelineTotals(stamp,stamp+60,"legacy.test");
+            Equal(120,legacy.Download,"legacy whole-minute bytes preserved"); Equal(1,legacy.LegacyMinutes,"legacy resolution retained");
+            var partial=store.QueryTimelineTotals(stamp+10,stamp+70,"legacy.test");
+            Equal(0,partial.Download,"legacy partial minute not fabricated"); Equal(1,partial.PartialLegacyMinutes,"partial precision warning available");
+            Equal(60,store.QueryTimeline(start,start.AddMinutes(1),"",1).Single().Resolution,"zoom does not invent legacy seconds");
+            store.Clear(); recorder.Clear();
+            StorageTests.Execute(path,"CREATE TRIGGER reject_history BEFORE UPDATE ON timeline_seconds BEGIN SELECT RAISE(ABORT,'fixture failure'); END;");
+            recorder.Observe(Array.Empty<Increment>(),0,start,true);
+            bool failed=false;
+            try { for(int i=1;i<=5;i++) recorder.Observe(Bytes(1),i,start.AddSeconds(i),true); } catch(IOException) { failed=true; }
+            Check(failed&&recorder.BufferedSamples==0,"failed history transaction cannot retain an unbounded buffer");
+            Equal(0,store.QueryTimeline(start,end,"").Count,"failed history transaction rolls back all rows");
+            StorageTests.Execute(path,"DROP TRIGGER reject_history;");
+            recorder.Observe(Bytes(7),6,start.AddSeconds(6),true); recorder.Flush();
+            Equal(7,store.QueryTimeline(start,end,"").Single().Download,"history writer recovers after failed batch without backfill");
+            var smooth=ChartMath.Smooth(new[] { new CurvePoint(0,0), new CurvePoint(1,100), new CurvePoint(2,5), new CurvePoint(3,0), new CurvePoint(double.NaN,double.NaN), new CurvePoint(5,10) });
+            Check(smooth.Where(p=>double.IsFinite(p.Y)).All(p=>p.Y>=0 && p.Y<=100), "smoothing never invents peaks or negative values");
+            Check(smooth.Any(p=>double.IsNaN(p.X)) && smooth.Last().X==5, "smoothing preserves gaps and endpoints");
+            Check(ChartMath.Step(86400,false)>=72 && ChartMath.Step(60,false)==1, "zoom aggregation bounds point count");
             Console.WriteLine($"PASS: {assertions} timeline assertions (toggle, coverage, timestamps, gaps, split, filtering, clear, 10000-sample bounded buffer)");
         }
         finally { foreach (string suffix in new[] { "", "-wal", "-shm" }) if (File.Exists(path + suffix)) File.Delete(path + suffix); }

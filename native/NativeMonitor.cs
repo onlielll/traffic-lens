@@ -56,6 +56,7 @@ public sealed class NativeMonitor : IDisposable
         clearPath = Path.Combine(root, "clear.signal");
         Directory.CreateDirectory(root);
         config = Settings.Load(ConfigPath);
+        AppTheme.Apply(config.ColorMode);
         Strings.UseLanguage(config.Language);
         frame = NativeFrame.Empty;
         if (args.Length > 0 && args[0] is "--native-test" or "--timeline-soak")
@@ -107,7 +108,7 @@ public sealed class NativeMonitor : IDisposable
         DateTime day = DateTime.Today, configTime = File.Exists(ConfigPath) ? File.GetLastWriteTimeUtc(ConfigPath) : DateTime.MinValue;
         string endpoint = config.Endpoint, secret = config.ProtectedSecret;
         LiveStatus? published = null;
-        double publishedAt = -15;
+        double publishedAt = -15, prunedAt = -60;
         using var interval = new PeriodicTimer(TimeSpan.FromSeconds(1));
         try
         {
@@ -147,6 +148,11 @@ public sealed class NativeMonitor : IDisposable
                         store.Clear();
                         today.Clear();
                         File.Delete(clearPath);
+                    }
+                    if (watch.Elapsed.TotalSeconds - prunedAt >= 60)
+                    {
+                        store.PruneTimeline(DateTimeOffset.UtcNow);
+                        prunedAt = watch.Elapsed.TotalSeconds;
                     }
                     var snapshot = await client.ReadAsync(cfg, stop.Token);
                     double sampleTime = watch.Elapsed.TotalSeconds;
@@ -251,6 +257,8 @@ public sealed class NativeMonitor : IDisposable
                 case 0x02E0:
                 case 0x007E:
                 case 0x001A:
+                    AppTheme.Apply(config.ColorMode, true);
+                    Win.InvalidateRect(hwnd, IntPtr.Zero, false);
                     ApplyGeometry();
                     return IntPtr.Zero;
                 case 0x0216:
@@ -499,6 +507,7 @@ public sealed class NativeMonitor : IDisposable
     }
     void RefreshLanguage()
     {
+        AppTheme.Apply(config.ColorMode);
         Strings.UseLanguage(config.Language);
         Win.SetWindowText(hwnd, Strings.T("代理流量悬浮窗"));
         if (unlockWindow != IntPtr.Zero) Win.SetWindowText(unlockWindow, Strings.T("解锁代理流量"));
@@ -760,6 +769,24 @@ public sealed class NativeMonitor : IDisposable
             if (Win.GetGuiResources(process.Handle, 0) > gdiStart + 5)
                 throw new Exception(Strings.T("缩放/调整缓冲区时 GDI 对象增长"));
             assertions++;
+            var themeCounts=new System.Collections.Generic.List<uint>();
+            uint beforeThemes=Win.GetGuiResources(process.Handle,0);
+            for(int i=0;i<100;i++)
+            {
+                config.ColorMode=i%2==0?"light":"dark";
+                canvas.Render(Volatile.Read(ref frame),config,mini);
+                themeCounts.Add(Win.GetGuiResources(process.Handle,0));
+            }
+            File.WriteAllText(Path.Combine(output,"theme-gdi.txt"),"before="+beforeThemes+" cycles="+string.Join(",",themeCounts));
+            if(themeCounts.Skip(2).Any(count=>count!=themeCounts[1])) throw new Exception("Theme switch leaked GDI resources after palette warmup.");
+            assertions++;
+            config.MiniMode=false; compact.Reset(); RefreshMode(); ApplyGeometry();
+            foreach(string mode in new[]{"light","dark"})
+            {
+                config.ColorMode=mode; canvas.Render(Volatile.Read(ref frame),config,mini);
+                canvas.SaveBitmap(Path.Combine(output,"native-theme-"+mode+".bmp"));
+            }
+            config.ColorMode="system";
             config.UiScale = 1;
             config.MiniMode = false;
             config.Locked = true;
@@ -872,7 +899,7 @@ public sealed class NativeMonitor : IDisposable
             OpenSettings(true);
             File.WriteAllText(Path.Combine(output, "native-test.txt"), $"PASS: {assertions} assertions, direct mouse drag in both modes, capture/release and saved position, 10000 paints, 100 resize/mode cycles, four corners; GDI start={gdiStart}, end={Win.GetGuiResources(process.Handle, 0)}\n");
         }
-        else if (watch.Elapsed.TotalSeconds - settingsStarted > 8)
+        else if (watch.Elapsed.TotalSeconds - settingsStarted > 20)
         {
             testPhase = 2;
             _ = Task.Run(async () =>
