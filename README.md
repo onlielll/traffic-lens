@@ -17,14 +17,17 @@ Traffic Lens 在 Windows 桌面显示代理上下行速率、当前下载与上�
 
 - **实时排行**：分别显示下载和上传最快的目标，支持域名合并或单连接排行，展示可获取的节点与进程信息。
 - **每日统计**：查看今天、近七天的域名用量排行，默认保留 30 天记录。
+- **流量时间线**：可选的分钟记录，查看代理总量或指定域名/IP的时间曲线，切换平均速率与每分钟用量。时间线保留 7 天。
 - **悬浮窗控制**：拖动、边缘吸附、锁定与点击穿透，可调整透明度、缩放和置顶状态。
 - **自动收起与展开**：迷你模式保留关键速率，超过设定阈值后自动展开。
 - **个性化设置**：展示内容独立开关，支持中文、英文、托盘控制与可选开机启动。
 
 <details>
-<summary>设置界面</summary>
+<summary>设置与时间线</summary>
 
 ![设置](docs/images/settings.png)
+
+![时间线](docs/images/timeline.png)
 
 </details>
 
@@ -58,7 +61,9 @@ Traffic Lens 在 Windows 桌面显示代理上下行速率、当前下载与上�
 
 只读取本机 Mihomo 接口，最终 DIRECT 的连接与未知链路不计入代理流量。速度每秒采样，显示最近三秒的平均值。
 
-“监测累计”记录软件运行期间观测到的增量，可能遗漏短连接及断线期间的流量，适合定位流量来源。进程信息取决于 Mihomo；HTTPS 连接无法识别具体下载文件。
+时间线记录默认关闭，可在流量记录页开启。时间戳采用观测时间并以本地时间显示；断线和未记录的分钟留空。开启前的每日合计不会转换成历史曲线。
+
+，可能遗漏短连接及断线期间的流量，适合定位流量来源。进程信息取决于 Mihomo；HTTPS 连接无法识别具体下载文件。
 
 设置与统计存储在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥由 Windows DPAPI 加密。软件不上传统计、不修改分流规则。卸载后保留本机设置与记录。
 
@@ -79,4 +84,4 @@ Traffic Lens 在 Windows 桌面显示代理上下行速率、当前下载与上�
 
 Copyright © 2026 **onlielll** · [MIT](LICENSE)
 
-工具栏使用 [Heroicons](https://github.com/tailwindlabs/heroicons)。随包组件的许可见 [第三方说明](THIRD-PARTY-NOTICES.md)。
+时间曲线使用 [OxyPlot](https://github.com/oxyplot/oxyplot)，工具栏使用 [Heroicons](https://github.com/tailwindlabs/heroicons)。随包组件的许可见 [第三方说明](THIRD-PARTY-NOTICES.md)。

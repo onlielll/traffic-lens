@@ -18,6 +18,9 @@ public sealed class Settings
     public bool ShowUpload { get; set; } = true;
     public bool ShowTotal { get; set; } = true;
     public bool ShowTargetTotal { get; set; }
+    public bool RecordTimeline { get; set; }
+    public int TimelineMetric { get; set; }
+    public int TimelineRange { get; set; }
     public bool SingleConnection { get; set; }
     public bool Locked { get; set; }
     public bool ClickThrough { get; set; }
@@ -65,6 +68,8 @@ public sealed class Settings
             settings.Opacity = Clamp(settings.Opacity, 0.35, 1, 0.92);
             settings.UiScale = Clamp(settings.UiScale, 0.8, 1.25, 1);
             settings.Corner = Math.Clamp(settings.Corner, 0, 3);
+            settings.TimelineMetric = Math.Clamp(settings.TimelineMetric, 0, 1);
+            settings.TimelineRange = Math.Clamp(settings.TimelineRange, 0, 2);
             settings.DownloadThresholdKB = Clamp(settings.DownloadThresholdKB, 1, 1048576, 1024);
             settings.UploadThresholdKB = Clamp(settings.UploadThresholdKB, 1, 1048576, 512);
             settings.TriggerSeconds = Clamp(settings.TriggerSeconds, 1, 30, 2);
@@ -151,7 +156,7 @@ public static class WindowsCrypto
 
 public record DailyRow(string Target, long Download, long Upload);
 
-public sealed class TrafficStore : IDisposable
+public sealed partial class TrafficStore : IDisposable
 {
     IntPtr db;
 
@@ -180,8 +185,12 @@ public sealed class TrafficStore : IDisposable
             if (sqlite3_open(path, out db) != 0) throw new IOException("无法打开统计数据库");
             Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000; " +
                 "CREATE TABLE IF NOT EXISTS daily(day TEXT NOT NULL,target TEXT NOT NULL," +
-                "download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(day,target));");
+                "download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(day,target));" +
+                "CREATE TABLE IF NOT EXISTS timeline(minute INTEGER NOT NULL,target TEXT NOT NULL," +
+                "download INTEGER NOT NULL,upload INTEGER NOT NULL,seconds REAL NOT NULL,first INTEGER NOT NULL,last INTEGER NOT NULL," +
+                "PRIMARY KEY(minute,target));");
             Prune(DateTime.Today);
+            PruneTimeline(DateTimeOffset.UtcNow);
         }
         catch
         {
@@ -222,10 +231,12 @@ public sealed class TrafficStore : IDisposable
                 $"WHERE day={day} AND target={target};");
         }
         sql.Append("COMMIT;");
-        try
-        {
-            Exec(sql.ToString());
-        }
+        Transaction(sql.ToString());
+    }
+
+    void Transaction(string sql)
+    {
+        try { Exec(sql); }
         catch
         {
             try { Exec("ROLLBACK;"); } catch (IOException) { }
@@ -257,7 +268,7 @@ public sealed class TrafficStore : IDisposable
         Query(DateTime.Today, DateTime.Today).ToDictionary(row => row.Target, row => new Amount(row.Download, row.Upload));
 
     public void Prune(DateTime today) => Exec($"DELETE FROM daily WHERE day<{Quote(today.Date.AddDays(-29).ToString("yyyy-MM-dd"))};");
-    public void Clear() => Exec("DELETE FROM daily;");
+    public void Clear() => Transaction("BEGIN IMMEDIATE;DELETE FROM daily;DELETE FROM timeline;COMMIT;");
 
     public void Dispose()
     {

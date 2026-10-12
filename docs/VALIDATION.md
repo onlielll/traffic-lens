@@ -1,5 +1,19 @@
 # 验证报告 · Validation
 
+## 2.1.0 时间线 · 2026-10-12
+
+- x64 与 x86 的核心、存储、接口及展示回归通过；时间线新增 30 项断言，覆盖开关基准、观测覆盖时长、时间戳、分钟边界与舍入、目标筛选、断线、休眠、清空和七天保留。
+- 连续模拟 10,000 次采样，当前分钟缓冲最多 11 项（十个轮换目标与总量），未保留完整逐秒历史。
+- 中英文界面在 820×650 与 520×360 检查，目标可输入；本地时区转换正确，重复刷新 100 次复用同一图表，点数不增长。设置窗口关闭后子进程退出。
+- x64 与 x86 的原生测试完成 10,000 次绘制与 100 次窗口切换，GDI 对象 27→27。
+- 开启时间线、使用本机接口进行 300 秒隔离运行，成功读取 300 次，失败 0 次；私有工作集 9.96–25.2 MiB，GDI 对象 27–27。未强制 GC 或清空工作集。
+- OxyPlot 三个设置页组件共 796,160 字节（约 0.76 MiB），不加入常驻程序的依赖。
+- 三个架构均完成自包含构建。Windows 10 与 ARM64 仍待实机验证。此次新功能的短时运行观察不能替代一小时或更长的运行验证。
+
+The optional timeline passed 30 checks, a 10,000-sample bounded-buffer simulation, bilingual chart checks and a five-minute live run. Chart dependencies are confined to the settings process. Long-duration validation of the new feature remains pending.
+
+## 2.0.0 基线结果
+
 测试日期：2026-10-11，Asia/Shanghai。测试系统：Windows 11 build 26200。
 
 ## 功能验证

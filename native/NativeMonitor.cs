@@ -46,8 +46,11 @@ public sealed class NativeMonitor : IDisposable
     {
         this.args = args;
         this.activate = activate;
-        if (args.Length > 1 && args[0] == "--native-test")
-            root = Path.Combine(args[1], "test-session", Guid.NewGuid().ToString("N"));
+        if (args.Length > 1 && args[0] is "--native-test" or "--timeline-soak")
+        {
+            string location = args[0] == "--native-test" ? args[1] : Path.GetDirectoryName(args[1])!;
+            root = Path.Combine(location, "test-session", Guid.NewGuid().ToString("N"));
+        }
         ConfigPath = Path.Combine(root, "settings.json");
         LivePath = Path.Combine(root, "live.json");
         clearPath = Path.Combine(root, "clear.signal");
@@ -55,8 +58,11 @@ public sealed class NativeMonitor : IDisposable
         config = Settings.Load(ConfigPath);
         Strings.UseLanguage(config.Language);
         frame = NativeFrame.Empty;
-        if (args.Length > 0 && args[0] == "--native-test")
+        if (args.Length > 0 && args[0] is "--native-test" or "--timeline-soak")
+        {
             config.Visible = false;
+            config.RecordTimeline = true;
+        }
         procedure = WndProc;
     }
     public int Run()
@@ -76,7 +82,7 @@ public sealed class NativeMonitor : IDisposable
         Win.SetTimer(hwnd, new IntPtr(1), 250, IntPtr.Zero);
         activationWait = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => Win.PostMessage(hwnd, ActivateMessage, IntPtr.Zero, IntPtr.Zero), null, Timeout.Infinite, false);
         worker = Task.Run(MonitorLoopAsync);
-        if (args.Length > 1 && args[0] == "--soak")
+        if (args.Length > 1 && args[0] is "--soak" or "--timeline-soak")
             _ = Task.Run(() => SoakAsync(args[1], args.Length > 2 && int.TryParse(args[2], out var duration) ? duration : 3600));
         while (Win.GetMessage(out var message, IntPtr.Zero, 0, 0) > 0)
         {
@@ -97,6 +103,7 @@ public sealed class NativeMonitor : IDisposable
         var engine = new TrafficEngine();
         using var store = new TrafficStore(Path.Combine(root, "traffic.sqlite"));
         var today = store.Today();
+        var timeline = new TimelineRecorder(store);
         DateTime day = DateTime.Today, configTime = File.Exists(ConfigPath) ? File.GetLastWriteTimeUtc(ConfigPath) : DateTime.MinValue;
         string endpoint = config.Endpoint, secret = config.ProtectedSecret;
         LiveStatus? published = null;
@@ -130,11 +137,22 @@ public sealed class NativeMonitor : IDisposable
                     {
                         day = DateTime.Today;
                         store.Prune(day);
+                        store.PruneTimeline(DateTimeOffset.UtcNow);
                         today = store.Today();
                     }
+                    // Consume clear requests even while the API is unavailable, before pending history can flush.
+                    if (File.Exists(clearPath))
+                    {
+                        timeline.Clear();
+                        store.Clear();
+                        today.Clear();
+                        File.Delete(clearPath);
+                    }
                     var snapshot = await client.ReadAsync(cfg, stop.Token);
-                    var increments = engine.Sample(snapshot, watch.Elapsed.TotalSeconds, DateTime.Now);
-                    string status = Strings.T("已连接 · ") + Strings.T(client.Source);
+                    double sampleTime = watch.Elapsed.TotalSeconds;
+                    var sampledAt = DateTimeOffset.Now;
+                    var increments = engine.Sample(snapshot, sampleTime, sampledAt.DateTime);
+                    string status = Strings.T("内核在线 · ") + Strings.T(client.Source);
                     try
                     {
                         store.Add(increments);
@@ -145,15 +163,9 @@ public sealed class NativeMonitor : IDisposable
                             today.TryGetValue(increment.Target, out var old);
                             today[increment.Target] = new((old?.Download ?? 0) + increment.Download, (old?.Upload ?? 0) + increment.Upload);
                         }
+                        timeline.Observe(increments, sampleTime, sampledAt, cfg.RecordTimeline);
                     }
                     catch { status = Strings.T("实时监控正常 · 统计保存失败"); }
-                    // A clear requested by the settings process must also clear the in-memory totals.
-                    if (File.Exists(clearPath))
-                    {
-                        store.Clear();
-                        today.Clear();
-                        File.Delete(clearPath);
-                    }
                     var view = engine.View(cfg.SingleConnection);
                     today.TryGetValue(view.DownloadTop?.Target ?? "", out var down);
                     today.TryGetValue(view.UploadTop?.Target ?? "", out var up);
@@ -161,7 +173,13 @@ public sealed class NativeMonitor : IDisposable
                     Interlocked.Increment(ref success);
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
-                catch { engine.Reset(); Volatile.Write(ref frame, NativeFrame.Empty with { Status = Strings.T("连接中断 · 自动重连") }); Interlocked.Increment(ref failures); }
+                catch
+                {
+                    engine.Reset();
+                    try { timeline.Break(); } catch (IOException) { }
+                    Volatile.Write(ref frame, NativeFrame.Empty with { Status = Strings.T("连接中断 · 自动重连") });
+                    Interlocked.Increment(ref failures);
+                }
                 var latest = Volatile.Read(ref frame);
                 // Publish changes immediately; an idle heartbeat every 15 seconds avoids repeated disk writes.
                 if (published == null || published.connected != latest.Connected || published.status != latest.Status || published.source != latest.Source || watch.Elapsed.TotalSeconds - publishedAt >= 15)
@@ -181,6 +199,7 @@ public sealed class NativeMonitor : IDisposable
             } while (await interval.WaitForNextTickAsync(stop.Token));
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+        finally { try { timeline.Flush(); } catch (IOException) { } }
     }
     IntPtr WndProc(IntPtr window, uint message, IntPtr w, IntPtr l)
     {
@@ -688,6 +707,7 @@ public sealed class NativeMonitor : IDisposable
                 await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakSample("sample", clock.Elapsed.TotalSeconds, success, failures, process.WorkingSet64, process.PrivateMemorySize64, GC.GetTotalMemory(false), process.HandleCount, Win.GetGuiResources(process.Handle, 0), Win.GetGuiResources(process.Handle, 1)), MonitorJson.Default.SoakSample));
             }
             await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakResult("complete", clock.Elapsed.TotalSeconds, success, failures), MonitorJson.Default.SoakResult));
+            if (args[0] == "--timeline-soak") Win.PostMessage(hwnd, 0x10, IntPtr.Zero, IntPtr.Zero);
         }
         catch (OperationCanceledException) { }
         catch { }
@@ -914,7 +934,8 @@ public static class Entry
     [STAThread]
     public static void Main(string[] args)
     {
-        string name = @"Local\ProxyTrafficFloat.User." + Environment.UserName;
+        string suffix = args.Length == 0 ? "" : args[0] switch { "--native-test" => ".NativeTest", "--timeline-soak" => ".TimelineSoak", _ => "" };
+        string name = @"Local\ProxyTrafficFloat.User." + Environment.UserName + suffix;
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + ".Activate");
         using var mutex = new Mutex(false, name);
         bool owns;

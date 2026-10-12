@@ -31,7 +31,13 @@ public static class Program
         var app = new MonitorApp(args) { Activation = activation };
         app.DispatcherUnhandledException += (_, e) =>
         {
-            MessageBox.Show(Strings.T("设置未能完成：") + Strings.T(e.Exception.Message), "Traffic Lens");
+            if (testing)
+            {
+                Directory.CreateDirectory(args[1]);
+                File.WriteAllText(Path.Combine(args[1], "settings-error.txt"), e.Exception.ToString());
+                app.Shutdown(1);
+            }
+            else MessageBox.Show(Strings.T("设置未能完成：") + Strings.T(e.Exception.Message), "Traffic Lens");
             e.Handled = true;
         };
         try { app.Run(); }
@@ -173,12 +179,32 @@ public sealed class MonitorApp : Application
         Directory.CreateDirectory(output);
         // Public screenshots use example data in the isolated test directory, never real browsing history.
         Store.Add(new[] { new Increment(DateTime.Today, "downloads.example", 186L * 1024 * 1024, 2048), new Increment(DateTime.Today, "uploads.example", 4096, 24L * 1024 * 1024) });
-        File.WriteAllText(Path.Combine(dataRoot, "live.json"), JsonSerializer.Serialize(new { connected = true, status = "已连接 · 本机命名管道", source = "命名管道", at = DateTimeOffset.UtcNow }));
+        Config.RecordTimeline = true;
+        Save();
+        var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60 * 60;
+        var buckets = new List<TimelineBucket>();
+        for (int i = 1; i < 60; i++)
+        {
+            if (i is 25 or 26 or 27) continue;
+            long time = minute - i * 60;
+            long d = (long)((0.3 + Math.Pow(Math.Sin(i * 0.11), 8) * 2.5) * 60 * 1024 * 1024);
+            long u = (long)((0.05 + Math.Pow(Math.Cos(i * 0.14), 8) * 0.7) * 60 * 1024 * 1024);
+            foreach (var item in new[] { ("", d, u, 60.0), ("downloads.example", d, 0L, 0.0), ("uploads.example", 0L, u, 0.0) })
+            {
+                var bucket = new TimelineBucket(time, item.Item1);
+                bucket.Add(item.Item2, item.Item3, item.Item4, time * 1000, (time + 60) * 1000);
+                buckets.Add(bucket);
+            }
+        }
+        Store.AddTimeline(buckets);
+        File.WriteAllText(Path.Combine(dataRoot, "live.json"), JsonSerializer.Serialize(new { connected = true, status = "内核在线 · 本机命名管道", source = "命名管道", at = DateTimeOffset.UtcNow }));
         ReadStatus();
         try
         {
             await Task.Delay(600);
             await settings!.CheckToggleAnimationAsync(output);
+            settings.SelectPage(2);
+            settings.VerifyTimelineForTest(output);
             foreach (string language in new[] { "zh-CN", "en" })
             {
                 settings.SetLanguage(language);
@@ -191,6 +217,17 @@ public sealed class MonitorApp : Application
                         settings.SelectPage(i);
                         await Task.Delay(150);
                         SavePage($"settings-{language}{(small ? "-small" : "")}-{i}.png");
+                        if (i == 2)
+                        {
+                            settings.ShowTimeline();
+                            await Task.Delay(150);
+                            SavePage($"timeline-speed-{language}{(small ? "-small" : "")}.png");
+                            Config.TimelineMetric = 1;
+                            settings.SelectPage(2);
+                            await Task.Delay(150);
+                            SavePage($"timeline-usage-{language}{(small ? "-small" : "")}.png");
+                            Config.TimelineMetric = 0;
+                        }
                     }
                 }
                 settings.ScrollCurrentToEnd();

@@ -197,6 +197,7 @@ public sealed class SettingsWindow : Window
     ComboBox? languagePicker;
     int currentPage;
     DateTime lastStats = DateTime.MinValue;
+    TimelinePanel? timeline;
 
     public SettingsWindow(MonitorApp app)
     {
@@ -239,6 +240,7 @@ public sealed class SettingsWindow : Window
             saveTimer.Stop();
             FlushSave();
             app.Updated -= Refresh;
+            timeline?.Dispose();
             source?.RemoveHook(Hook);
             source = null;
         };
@@ -475,8 +477,15 @@ public sealed class SettingsWindow : Window
         var selectors = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
         selectors.Children.Add(range);
         selectors.Children.Add(sort);
-        page.Children.Add(selectors);
 
+        Toggle(page, "记录流量时间线", "按分钟保存代理总量和各目标的上下行数据，保留 7 天。默认关闭。",
+            () => app.Config.RecordTimeline, value => { app.Config.RecordTimeline = value; timeline?.Refresh(true); });
+        var history = Section("时间线", "选择目标或输入域名/IP；在曲线上查看时间与数值。");
+        timeline = new TimelinePanel(app, Changed);
+        history.Children.Add(timeline);
+        page.Children.Add(Ui.Card(history));
+
+        page.Children.Add(selectors);
         var columns = new GridView();
         columns.Columns.Add(new GridViewColumn { Header = Strings.T("目标"), Width = 240, DisplayMemberBinding = new System.Windows.Data.Binding("Target") });
         columns.Columns.Add(new GridViewColumn { Header = Strings.T("下载"), Width = 120, DisplayMemberBinding = new System.Windows.Data.Binding("Down") });
@@ -499,7 +508,7 @@ public sealed class SettingsWindow : Window
         page.Children.Add(Ui.Card(table, new Thickness(0)));
         var clear = Ui.Button("清空记录", (_, _) =>
         {
-            if (MessageBox.Show(this, Strings.T("清空全部每日流量记录？此操作无法撤销。"), Strings.T("清空记录"),
+            if (MessageBox.Show(this, Strings.T("清空每日统计和全部时间线记录？此操作无法撤销。"), Strings.T("清空记录"),
                 MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 app.ClearStatistics();
@@ -533,6 +542,7 @@ public sealed class SettingsWindow : Window
 
         var state = Section("本地连接");
         state.Children.Add(connection);
+        state.Children.Add(Ui.Label("内核在线表示接口可读取。速率采用最近三秒平均，停止传输后会短暂保留；关闭系统代理和 TUN 不会清空今日累计。", 11, Ui.Muted));
         state.Children.Add(Ui.Label("自动识别当前运行的 Mihomo 接口，通常无需手动配置。", 11, Ui.Muted));
         page.Children.Add(Ui.Card(state));
 
@@ -571,7 +581,7 @@ public sealed class SettingsWindow : Window
             () => app.Config.AutoStart, app.SetAutoStart);
         page.Children.Add(Ui.Label("密钥使用当前 Windows 用户加密保存。程序只读连接数据，不修改分流规则，也不进行外网测速。", 11, Ui.Muted));
         var about = Section("关于 Traffic Lens");
-        about.Children.Add(Ui.Label("版本 2.0.0 · 仅在本机监测", 11, Ui.Muted));
+        about.Children.Add(Ui.Label("版本 2.1.0 · 仅在本机监测", 11, Ui.Muted));
         about.Children.Add(Ui.Label("Copyright © 2026 onlielll", 11, Ui.Muted));
         page.Children.Add(Ui.Card(about));
     }
@@ -687,6 +697,9 @@ public sealed class SettingsWindow : Window
         pageNote.Text = Strings.T(notes[index]);
         if (index == 2) RefreshRows();
     }
+
+    public void ShowTimeline() => timeline?.BringIntoView();
+    public void VerifyTimelineForTest(string output) => timeline?.VerifyForTest(output);
 
     public void ScrollCurrentToEnd()
     {
@@ -806,8 +819,9 @@ public sealed class SettingsWindow : Window
         syncing = true;
         foreach (var pair in checks) pair.Box.IsChecked = pair.Value();
         syncing = false;
-        connection.Text = app.Status.StartsWith("已连接 · ") || app.Status.StartsWith("Connected · ")
-            ? Strings.T("已连接 · ") + Strings.T(app.Source) : Strings.T(app.Status);
+        connection.Text = app.Status.StartsWith("内核在线 · ") || app.Status.StartsWith("Core online · ") ||
+            app.Status.StartsWith("已连接 · ") || app.Status.StartsWith("Connected · ")
+            ? Strings.T("内核在线 · ") + Strings.T(app.Source) : Strings.T(app.Status);
         connection.Foreground = app.Connected ? Ui.Down : Ui.Muted;
         if (pages[2].Visibility == Visibility.Visible && DateTime.UtcNow - lastStats > TimeSpan.FromSeconds(5))
             RefreshRows();
@@ -833,6 +847,8 @@ public sealed class SettingsWindow : Window
                 Up = Display.Bytes(row.Upload)
             }).ToList();
             emptyRows.Visibility = rows.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            timeline?.UpdateTargets(range.SelectedIndex == 1 ? data : app.Store.Query(DateTime.Today.AddDays(-6), DateTime.Today));
+            timeline?.Refresh(true);
             lastStats = DateTime.UtcNow;
         }
         catch

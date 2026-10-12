@@ -1,6 +1,6 @@
 param(
     [ValidateSet('win-x64', 'win-x86', 'win-arm64')][string]$Runtime = 'win-x64',
-    [string]$Version = '2.0.0',
+    [string]$Version = '2.1.0',
     [string]$Compiler,
     [switch]$IncludeSource,
     [switch]$SkipInstaller
@@ -23,7 +23,7 @@ foreach ($taskFile in @('ProxyTrafficFloat.exe', 'ProxyTrafficSettings.exe',
     }
 }
 New-Item -ItemType Directory -Force -Path $taskOutput | Out-Null
-foreach ($taskDocument in @('README.md', 'README.en.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'THIRD-PARTY-NOTICES-DOTNET.txt', 'THIRD-PARTY-NOTICES-RUNTIME.txt', 'THIRD-PARTY-NOTICES-HEROICONS.txt')) {
+foreach ($taskDocument in @('README.md', 'README.en.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'THIRD-PARTY-NOTICES-DOTNET.txt', 'THIRD-PARTY-NOTICES-RUNTIME.txt', 'THIRD-PARTY-NOTICES-HEROICONS.txt', 'THIRD-PARTY-NOTICES-OXYPLOT.txt')) {
     $taskDocumentPath = Join-Path $taskRoot $taskDocument
     if (Test-Path -LiteralPath $taskDocumentPath) {
         Copy-Item -LiteralPath $taskDocumentPath -Destination $taskPublished -Force
@@ -73,7 +73,7 @@ if ($IncludeSource) {
         }
     }
     foreach ($taskFile in @('README.md', 'README.en.md', 'CONTRIBUTING.md', 'CHANGELOG.md',
-        'LICENSE', 'THIRD-PARTY-NOTICES.md', 'THIRD-PARTY-NOTICES-DOTNET.txt', 'THIRD-PARTY-NOTICES-RUNTIME.txt', 'THIRD-PARTY-NOTICES-HEROICONS.txt', 'build.ps1', 'global.json', '.editorconfig', '.gitignore', '.gitattributes')) {
+        'LICENSE', 'THIRD-PARTY-NOTICES.md', 'THIRD-PARTY-NOTICES-DOTNET.txt', 'THIRD-PARTY-NOTICES-RUNTIME.txt', 'THIRD-PARTY-NOTICES-HEROICONS.txt', 'THIRD-PARTY-NOTICES-OXYPLOT.txt', 'build.ps1', 'global.json', '.editorconfig', '.gitignore', '.gitattributes')) {
         $taskFilePath = Join-Path $taskRoot $taskFile
         if (Test-Path -LiteralPath $taskFilePath) { Copy-Item -LiteralPath $taskFilePath -Destination $taskSourceOutput }
     }

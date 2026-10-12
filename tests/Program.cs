@@ -75,6 +75,7 @@ static class Test
         try { var conf = new Settings { Visible = false, SingleConnection = true, Opacity = 0.6, Endpoint = "http://127.0.0.1:9090", Secret = secret }; conf.Save(settingsPath); var loaded = Settings.Load(settingsPath); True(!loaded.Visible && loaded.SingleConnection && loaded.Opacity == 0.6, "settings restart persistence"); True(loaded.Secret == secret, "saved encrypted secret decrypts"); True(!File.ReadAllText(settingsPath).Contains(secret), "secret not stored plaintext"); File.WriteAllText(settingsPath, "broken"); True(Settings.Load(settingsPath).ShowSpeed, "corrupt settings safe defaults"); } finally { if (File.Exists(settingsPath)) File.Delete(settingsPath); }
         PresentationTests.Run();
         StorageTests.Run();
+        TimelineTests.Run();
         LocalizationTests.Run();
         await TransportTests.Run();
         if (args.Contains("--live")) using (var client = new MihomoClient())

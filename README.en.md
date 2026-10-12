@@ -17,14 +17,17 @@ Traffic Lens displays proxy upload and download speeds, the busiest targets, and
 
 - **Live rankings** — Separate download and upload leaders, grouped by domain or ranked by connection, with available node and process details.
 - **Daily usage** — Domain rankings for today and the past seven days, with 30-day retention by default.
+- **Traffic timeline** — Optional per-minute history for all proxy traffic or a domain/IP, with average speed and usage-per-minute views. Timeline retention is 7 days.
 - **Overlay controls** — Drag, snap to edges, lock, and enable click-through. Adjust opacity, scale, and always-on-top behavior.
 - **Automatic mini mode** — Keep key speeds visible and expand when traffic exceeds your thresholds.
 - **Preferences** — Choose displayed metrics, Chinese or English, tray controls, and optional startup with Windows.
 
 <details>
-<summary>Settings</summary>
+<summary>Settings and timeline</summary>
 
 ![Settings](docs/images/settings-en.png)
+
+![Timeline](docs/images/timeline-en.png)
 
 </details>
 
@@ -58,6 +61,10 @@ Use the tray to show, hide, or exit. Closing Settings leaves monitoring active. 
 
 Traffic Lens reads only the local Mihomo API. Final DIRECT connections and unknown routes are excluded from proxy totals. Connections are sampled once per second; displayed speeds average the last three seconds.
 
+Timeline recording is off by default. Enable it in Traffic history. Timestamps use observation time, displayed in local time; unmonitored minutes remain gaps. Earlier daily totals cannot be reconstructed into historical charts.
+
+Core online means the API is reachable. After system proxy and TUN are turned off, the three-second average may briefly persist; daily totals remain.
+
 Observed totals cover increments seen while monitoring. Short connections and disconnected periods may be missed. Process information depends on Mihomo, and HTTPS connections do not identify the downloaded file.
 
 Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change routing rules. Uninstalling preserves local settings and records.
@@ -79,4 +86,4 @@ Use `win-x86` or `win-arm64` for other architectures. Outputs go to `dist/`; Git
 
 Copyright © 2026 **onlielll** · [MIT](LICENSE)
 
-Toolbar icons use [Heroicons](https://github.com/tailwindlabs/heroicons). See [third-party notices](THIRD-PARTY-NOTICES.md) for bundled component licenses.
+Charts use [OxyPlot](https://github.com/oxyplot/oxyplot); toolbar icons use [Heroicons](https://github.com/tailwindlabs/heroicons). See [third-party notices](THIRD-PARTY-NOTICES.md) for bundled component licenses.
