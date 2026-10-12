@@ -63,12 +63,12 @@ public static class ChartMath
         return result;
     }
     // Aggregation affects drawing only. Interval totals always come from the original stored bytes.
-    public static int Step(double span, bool perMinute)
+    public static int Step(double span, bool perMinute, int points = 1200)
     {
-        int needed = Math.Max(perMinute ? 60 : 1, (int)Math.Ceiling(span / 1200));
+        int needed = Math.Max(perMinute ? 60 : 1, (int)Math.Ceiling(span / points));
         foreach (int value in new[] { 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600 })
-        if (value >= needed)
-            return value;
+            if (value >= needed)
+                return value;
         return 3600;
     }
 }

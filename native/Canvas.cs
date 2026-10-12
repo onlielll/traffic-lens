@@ -98,7 +98,7 @@ public sealed class Canvas : IDisposable
         var key = (size, weight);
         if (!fonts.TryGetValue(key, out var font))
         {
-            font = Win.CreateFont(-P(size), 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, englishFonts ? "Segoe UI" : "Microsoft YaHei UI");
+            font = Win.CreateFont(-P(size), 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, englishFonts ? "Segoe UI" : "Microsoft YaHei");
             fonts[key] = font;
         }
         var previous = Win.SelectObject(dc, font);

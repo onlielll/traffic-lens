@@ -44,18 +44,18 @@ public static class AppTheme
     }
     static readonly Dictionary<string, uint> Dark = new()
     {
-        ["Canvas"] = 0x10151E,
-        ["Surface"] = 0x18202D,
-        ["Line"] = 0x2D394B,
+        ["Canvas"] = 0x15171D,
+        ["Surface"] = 0x20242D,
+        ["Line"] = 0x333943,
         ["Ink"] = 0xEEF3FB,
-        ["Muted"] = 0xB0BDD1,
+        ["Muted"] = 0xB9C0CE,
         ["Accent"] = 0x62D8BD,
         ["Upload"] = 0xB1A3F9,
-        ["Control"] = 0x263348,
-        ["ControlHover"] = 0x30425B,
+        ["Control"] = 0x2C3240,
+        ["ControlHover"] = 0x394253,
         ["ControlBorder"] = 0x415169,
         ["Input"] = 0x101722,
-        ["Selection"] = 0x2A4054,
+        ["Selection"] = 0x304353,
         ["ToggleOff"] = 0x46536B,
         ["Knob"] = 0xF4F8FE,
         ["AccentInk"] = 0x10241F,
@@ -65,7 +65,7 @@ public static class AppTheme
     };
     static readonly Dictionary<string, uint> Light = new()
     {
-        ["Canvas"] = 0xF4F6FA,
+        ["Canvas"] = 0xF5F5F7,
         ["Surface"] = 0xFFFFFF,
         ["Line"] = 0xDCE3ED,
         ["Ink"] = 0x17212F,

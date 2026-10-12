@@ -187,10 +187,10 @@ public sealed class MonitorApp : Application
         {
             if (i is >= 700 and <= 750) continue;
             long time = end-i;
-            double peak=Math.Exp(-Math.Pow((i-180)/25.0,2))+Math.Exp(-Math.Pow((i-550)/70.0,2))*0.65;
-            long d=(long)((0.025+peak*2.5+Math.Pow(Math.Sin(i*0.025),8)*0.16)*1024*1024);
-            long u=(long)((0.01+Math.Exp(-Math.Pow((i-300)/35.0,2))*1.2+Math.Pow(Math.Cos(i*0.017),8)*0.06)*1024*1024);
-            foreach (var item in new[] { ("",d,u,1.0), ("downloads.example",d,0L,0.0), ("uploads.example",0L,u,0.0) })
+            long d=2048+(i%17==0?24*1024:0)+(i is >= 88 and <= 91?11L*1024*1024:0)+(i is >= 310 and <= 313?3L*1024*1024:0);
+            long u=512+(i%23==0?8192:0)+(i is >= 168 and <= 170?5L*1024*1024:0);
+            long low=i%31==0?128*1024:4096;
+            foreach (var item in new[] { ("",d+low,u,1.0), ("downloads.example",d,0L,0.0), ("uploads.example",0L,u,0.0), ("low.example",low,0L,0.0) })
             {
                 var bucket = new TimelineBucket(time,item.Item1);
                 bucket.Add(item.Item2,item.Item3,item.Item4,time*1000,(time+1)*1000);
@@ -204,9 +204,13 @@ public sealed class MonitorApp : Application
         {
             await Task.Delay(600);
             await settings!.CheckToggleAnimationAsync(output);
+            await settings.VerifyNavigationAsync(output);
+            var face=new System.Windows.Media.Typeface(new System.Windows.Media.FontFamily("Microsoft YaHei"),FontStyles.Normal,FontWeights.Normal,FontStretches.Normal);
+            if(!face.TryGetGlyphTypeface(out var glyphs) || !glyphs.CharacterToGlyphMap.ContainsKey('悬')) throw new InvalidOperationException("Chinese UI font resolved to a missing glyph.");
+            File.WriteAllText(Path.Combine(output,"font-test.txt"),"PASS: Chinese glyphs resolve to "+glyphs.FontUri+"; UI family="+Ui.InterfaceFont.Source);
             settings.SelectPage(2);
             settings.ShowTimeline();
-            await Task.Delay(150);
+            await Task.Delay(240);
             settings.VerifyTimelineForTest(output);
             foreach (string language in new[] { "zh-CN", "en" })
             {
@@ -218,16 +222,17 @@ public sealed class MonitorApp : Application
                     for (int i = 0; i < 4; i++)
                     {
                         settings.SelectPage(i);
-                        await Task.Delay(150);
+                        await Task.Delay(240);
                         SavePage($"settings-{language}{(small ? "-small" : "")}-{i}.png");
                         if (i == 2)
                         {
                             settings.ShowTimeline();
-                            await Task.Delay(150);
+                            await Task.Delay(240);
                             SavePage($"timeline-speed-{language}{(small ? "-small" : "")}.png");
+                            File.AppendAllText(Path.Combine(output,"chart-layout.txt"),$"{language}, small={small}: {settings.TimelineLayoutForTest}\n");
                             Config.TimelineMetric = 1;
                             settings.SelectPage(2);
-                            await Task.Delay(150);
+                            await Task.Delay(240);
                             SavePage($"timeline-usage-{language}{(small ? "-small" : "")}.png");
                             Config.TimelineMetric = 0;
                         }
@@ -244,10 +249,22 @@ public sealed class MonitorApp : Application
                 foreach (string theme in new[] { "light", "dark" })
                 {
                     settings.SetTheme(theme); await Task.Delay(200);
-                    settings.PreviewTimelineForTest(); await Task.Delay(150);
+                    settings.PreviewTimelineForTest(); await Task.Delay(240);
                     SavePage("timeline-interaction-"+language+"-"+theme+".png");
                 }
             }
+            settings!.SetTheme("dark"); settings.SetLanguage("zh-CN"); settings.SelectPage(2); settings.ShowTimeline();
+            settings.PreviewLowTrafficForTest(false); await Task.Delay(250); SavePage("timeline-low-burst.png");
+            settings.PreviewLowTrafficForTest(true); await Task.Delay(250); SavePage("timeline-low-detail.png");
+            settings.SelectPage(0);
+            settings.OpenAppearanceForTest(); await Task.Delay(220);
+            if(settings.AppearancePreviewForTest is FrameworkElement appearance)
+            {
+                var preview=new RenderTargetBitmap((int)Math.Ceiling(appearance.ActualWidth+20),(int)Math.Ceiling(appearance.ActualHeight+20),96,96,PixelFormats.Pbgra32);
+                preview.Render(appearance); var png=new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(preview));
+                using var appearanceStream=File.Create(Path.Combine(output,"appearance-picker.png")); png.Save(appearanceStream);
+            }
+            settings.CloseAppearanceForTest();
             File.WriteAllText(Path.Combine(output, "settings-test.txt"), "PASS: Chinese/English, four pages at normal and compact sizes, instant language change, toggle animation, isolated example data\n");
         }
         catch (Exception error)

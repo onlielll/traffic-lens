@@ -32,6 +32,14 @@ public static class Strings
 
     static readonly Dictionary<string, string> English = new(StringComparer.Ordinal)
     {
+        ["逐秒保存 · 最近 24 小时"] = "One-second history · Last 24 hours",
+        ["近 10 分钟"] = "Last 10 minutes",
+        ["速率峰值"] = "Peak speed",
+        ["突发"] = "Bursts",
+        ["细节"] = "Detail",
+        ["固定最低 1 MB/s 的纵轴，便于辨认突发流量。"] = "Keep a minimum 1 MB/s scale to spot traffic bursts.",
+        ["按当前数据缩放纵轴，查看低速流量。"] = "Fit the scale to inspect lower traffic rates.",
+        ["外观"] = "Appearance",
         ["切换主题"] = "Appearance",
         ["跟随系统"] = "System",
         ["浅色"] = "Light",

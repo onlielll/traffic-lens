@@ -32,11 +32,14 @@ public static class TimelineTests
             recorder.Observe(Array.Empty<Increment>(), 5, start.AddSeconds(5), true);
             recorder.Flush();
             var total = store.QueryTimeline(start, end, "").Single();
+            Equal(300,total.PeakDownload,"overview preserves per-second peak instead of averaging it away");
+            Equal(30,total.PeakUpload,"upload peak is independent from download peak");
             Equal(400, total.Download, "total bytes"); Equal(40, total.Upload, "up bytes"); Equal(3, total.Seconds, "actual monitored coverage including idle");
             Check(total.First == start.AddSeconds(2).ToUnixTimeMilliseconds() && total.Last == start.AddSeconds(4).ToUnixTimeMilliseconds(), "idle time does not extend activity timestamps");
             var selected = store.QueryTimeline(start, end, "example.test").Single();
             Equal(100, selected.Download, "target selected"); Equal(3, selected.Seconds, "target uses global monitored coverage");
             Equal(300, store.QueryTimeline(start, end, "a'中文.test").Single().Download, "quoted Unicode target");
+            Equal(300,store.QueryTimeline(start,end,"a'中文.test").Single().PeakDownload,"peak uses selected target");
             Equal(0, store.QueryTimeline(start, end, "absent.test").Single().Download, "observed target inactivity is zero");
             Check(selected.First == start.AddSeconds(2).ToUnixTimeMilliseconds() && selected.Last == start.AddSeconds(3).ToUnixTimeMilliseconds(), "activity timestamps are observation interval");
             recorder.Flush(); Equal(400, store.QueryTimeline(start, end, "").Single().Download, "flush is not repeated");

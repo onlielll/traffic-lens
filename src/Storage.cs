@@ -20,6 +20,8 @@ public sealed class Settings
     public bool ShowTotal { get; set; } = true;
     public bool ShowTargetTotal { get; set; }
     public bool RecordTimeline { get; set; }
+    public bool TimelinePeaks { get; set; } = true;
+    public int TimelineRecentMinutes { get; set; } = 10;
     public int TimelineMetric { get; set; }
     public int TimelineRange { get; set; }
     public bool SingleConnection { get; set; }
@@ -71,6 +73,7 @@ public sealed class Settings
             settings.UiScale = Clamp(settings.UiScale, 0.8, 1.25, 1);
             settings.Corner = Math.Clamp(settings.Corner, 0, 3);
             settings.TimelineMetric = Math.Clamp(settings.TimelineMetric, 0, 1);
+            settings.TimelineRecentMinutes = settings.TimelineRecentMinutes == 60 ? 60 : 10;
             settings.TimelineRange = Math.Clamp(settings.TimelineRange, 0, 2);
             settings.DownloadThresholdKB = Clamp(settings.DownloadThresholdKB, 1, 1048576, 1024);
             settings.UploadThresholdKB = Clamp(settings.UploadThresholdKB, 1, 1048576, 512);

@@ -17,7 +17,7 @@ Traffic Lens displays proxy upload and download speeds, the busiest targets, and
 
 - **Live rankings** — Separate download and upload leaders, grouped by domain or ranked by connection, with available node and process details.
 - **Daily usage** — Domain rankings for today and the past seven days, with 30-day retention by default.
-- **Traffic timeline** — Keep the last 24 hours at one-second resolution for all proxy traffic or a domain/IP. Smooth curves, hover details, scroll zoom, pan, and two-point interval totals.
+- **Traffic timeline** — Keep the last 24 hours at one-second resolution for all proxy traffic or a domain/IP. A 10-minute view by default, with peak speed, average speed and usage-per-minute modes, smooth curves, hover details, zoom/pan and interval totals.
 - **Overlay controls** — Drag, snap to edges, lock, and enable click-through. Adjust opacity, scale, and always-on-top behavior.
 - **Automatic mini mode** — Keep key speeds visible and expand when traffic exceeds your thresholds.
 - **Preferences** — Choose displayed metrics, light/dark/system appearance, Chinese or English, tray controls, and optional startup with Windows.
@@ -55,13 +55,13 @@ Drag an empty area to move the overlay. Use the toolbar to open Settings, change
 
 By default, the overlay expands when the download leader reaches 1 MB/s or the upload leader reaches 512 KB/s for two seconds. It collapses after both stay below half their thresholds for ten seconds. Thresholds and delays are configurable.
 
-Use the tray to show, hide, or exit. Closing Settings leaves monitoring active. Change language in Connection & startup; use the ◐ title-bar button for light, dark or system appearance. The default follows Windows.
+Use the tray to show, hide, or exit. Closing Settings leaves monitoring active. Change language in Connection & startup; use the title-bar appearance button for light, dark or system appearance. The default follows Windows.
 
 ## Measurement and privacy
 
 Traffic Lens reads only the local Mihomo API. Final DIRECT connections and unknown routes are excluded from proxy totals. Connections are sampled once per second; displayed speeds average the last three seconds.
 
-Timeline recording is off by default. Enable it in Traffic history. Complete second-level records roll over after 24 hours; daily rankings retain 30 days. The chart aggregates only the visible range and restores second-level detail when zoomed in. Selected interval totals use recorded bytes rather than the interpolated curve. Timestamps are local; unmonitored periods remain gaps. Older minute records retain their original precision.
+Timeline recording is off by default. Enable it in Traffic history. Complete second-level records roll over after 24 hours; daily rankings retain 30 days. Bursts view avoids magnifying tiny traffic into full-height spikes; Detail fits the scale to low rates. The chart aggregates only the visible range, preserves rate peaks in peak mode, and restores second-level detail when zoomed in. Selected interval totals use recorded bytes rather than the interpolated curve. Timestamps are local; unmonitored periods remain gaps. Older minute records retain their original precision.
 
 Core online means the API is reachable. After system proxy and TUN are turned off, the three-second average may briefly persist; daily totals remain.
 

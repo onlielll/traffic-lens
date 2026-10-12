@@ -7,7 +7,7 @@ using System.Text;
 
 namespace ProxyTrafficFloat;
 
-public record TimelinePoint(long Timestamp, long Download, long Upload, double Seconds, int Minutes, long First, long Last, int Resolution);
+public record TimelinePoint(long Timestamp, long Download, long Upload, double Seconds, int Minutes, long First, long Last, int Resolution, double PeakDownload, double PeakUpload);
 public record TimelineTotals(long Download, long Upload, double Seconds, int LegacyMinutes, int PartialLegacyMinutes);
 public sealed class TimelineBucket
 {
@@ -190,14 +190,15 @@ public sealed partial class TrafficStore
             {
                 rows.Add(new(long.Parse(Cell(values, 0)), long.Parse(Cell(values, 1)), long.Parse(Cell(values, 2)),
                     double.Parse(Cell(values, 3), CultureInfo.InvariantCulture), int.Parse(Cell(values, 4)), long.Parse(Cell(values, 5)),
-                    long.Parse(Cell(values, 6)), int.Parse(Cell(values, 7))));
+                    long.Parse(Cell(values, 6)), int.Parse(Cell(values, 7)), double.Parse(Cell(values, 8), CultureInfo.InvariantCulture), double.Parse(Cell(values, 9), CultureInfo.InvariantCulture)));
                 return 0;
             }
             catch { return 1; }
         };
         string raw = TimelineSource(target, first.ToUnixTimeSeconds(), last.ToUnixTimeSeconds());
         Exec($"SELECT stamp/{stepSeconds}*{stepSeconds},SUM(download),SUM(upload),SUM(seconds),COUNT(DISTINCT stamp/60)," +
-            $"COALESCE(MIN(NULLIF(first,0)),0),MAX(last),MAX(resolution) FROM ({raw}) GROUP BY stamp/{stepSeconds} ORDER BY stamp/{stepSeconds};", callback);
+            $"COALESCE(MIN(NULLIF(first,0)),0),MAX(last),MAX(resolution),MAX(CASE WHEN seconds>0 THEN download*1.0/seconds ELSE 0 END)," +
+            $"MAX(CASE WHEN seconds>0 THEN upload*1.0/seconds ELSE 0 END) FROM ({raw}) GROUP BY stamp/{stepSeconds} ORDER BY stamp/{stepSeconds};", callback);
         GC.KeepAlive(callback);
         return rows;
     }
