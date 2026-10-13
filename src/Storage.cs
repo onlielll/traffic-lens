@@ -20,6 +20,12 @@ public sealed class Settings
     public bool ShowDownload { get; set; } = true;
     public bool ShowUpload { get; set; } = true;
     public bool ShowTotal { get; set; } = true;
+    public bool ShowQuotaForecast { get; set; }
+    public double QuotaGB { get; set; }
+    public long QuotaBaselineBytes { get; set; }
+    public DateTime QuotaUpdatedUtc { get; set; }
+    [JsonIgnore]
+    public bool HasQuota => QuotaUpdatedUtc != default;
     public bool ShowTargetTotal { get; set; }
     public bool RecordTimeline { get; set; }
     public bool TimelinePeaks { get; set; } = true;
@@ -98,6 +104,7 @@ public sealed class Settings
             settings.Language = Strings.NormalizeLanguage(settings.Language);
             settings.ColorMode = AppTheme.Normalize(settings.ColorMode);
             // Settings can be edited outside the app. Bound values before they reach window geometry or timers.
+            settings.QuotaGB = Clamp(settings.QuotaGB, 0, 1048576, 0);
             settings.Opacity = Clamp(settings.Opacity, 0.35, 1, 0.92);
             settings.UiScale = Clamp(settings.UiScale, 0.8, 1.25, 1);
             settings.Corner = Math.Clamp(settings.Corner, 0, 3);
@@ -228,6 +235,8 @@ public sealed partial class TrafficStore : IDisposable
             Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000; " +
                 "CREATE TABLE IF NOT EXISTS daily(day TEXT NOT NULL,target TEXT NOT NULL," +
                 "download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(day,target));" +
+                "CREATE TABLE IF NOT EXISTS usage_counter(id INTEGER PRIMARY KEY,bytes INTEGER NOT NULL);" +
+                "INSERT OR IGNORE INTO usage_counter SELECT 1,COALESCE((SELECT SUM(download+upload) FROM daily),0) WHERE NOT EXISTS(SELECT 1 FROM usage_counter WHERE id=1);" +
                 "CREATE TABLE IF NOT EXISTS timeline(minute INTEGER NOT NULL,target TEXT NOT NULL," +
                 "download INTEGER NOT NULL,upload INTEGER NOT NULL,seconds REAL NOT NULL,first INTEGER NOT NULL,last INTEGER NOT NULL," +
                 "PRIMARY KEY(minute,target));" +
@@ -267,16 +276,19 @@ public sealed partial class TrafficStore : IDisposable
         }
         if (rows.Count == 0) return;
 
+        long observed = 0;
         var sql = new StringBuilder("BEGIN IMMEDIATE;");
         foreach (var row in rows)
         {
+            observed = checked(observed + row.Value.Download + row.Value.Upload);
             string day = Quote(row.Key.Day.ToString("yyyy-MM-dd")), target = Quote(row.Key.Target);
             // INSERT OR IGNORE + UPDATE also works with SQLite versions shipped in older Windows 10.
             sql.Append($"INSERT OR IGNORE INTO daily VALUES({day},{target},0,0);");
             sql.Append($"UPDATE daily SET download=download+{row.Value.Download},upload=upload+{row.Value.Upload} " +
                 $"WHERE day={day} AND target={target};");
         }
-        sql.Append("COMMIT;");
+        // One bounded counter shares the daily transaction and survives history pruning/clearing.
+        sql.Append($"UPDATE usage_counter SET bytes=bytes+{observed} WHERE id=1;COMMIT;");
         Transaction(sql.ToString());
     }
 
@@ -308,6 +320,34 @@ public sealed partial class TrafficStore : IDisposable
             $"AND day<={Quote(last.ToString("yyyy-MM-dd"))} GROUP BY target ORDER BY SUM(download)+SUM(upload) DESC;", callback);
         GC.KeepAlive(callback);
         return rows;
+    }
+
+    public long ObservedBytes()
+    {
+        long bytes = 0;
+        Callback callback = (_, _, values, _) =>
+            long.TryParse(Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(values)), out bytes) ? 0 : 1;
+        Exec("SELECT bytes FROM usage_counter WHERE id=1;", callback);
+        GC.KeepAlive(callback);
+        return bytes;
+    }
+
+    public UsageTrend RecentDailyTrend(DateTime today)
+    {
+        UsageTrend trend = default;
+        Callback callback = (_, _, values, _) =>
+        {
+            string average = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(values)) ?? "0";
+            string count = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(values, IntPtr.Size)) ?? "0";
+            if (!double.TryParse(average, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bytes) || !int.TryParse(count, out var days)) return 1;
+            trend = new(bytes, days);
+            return 0;
+        };
+        // Exclude the unfinished current day; at most seven recorded days within retained history.
+        Exec($"SELECT COALESCE(AVG(bytes),0),COUNT(*) FROM (SELECT SUM(download+upload) AS bytes FROM daily " +
+            $"WHERE day<{Quote(today.Date.ToString("yyyy-MM-dd"))} GROUP BY day HAVING bytes>0 ORDER BY day DESC LIMIT 7);", callback);
+        GC.KeepAlive(callback);
+        return trend;
     }
 
     public Dictionary<string, Amount> Today() =>

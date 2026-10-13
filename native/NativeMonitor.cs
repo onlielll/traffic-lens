@@ -13,6 +13,7 @@ namespace ProxyTrafficFloat.Native;
 
 public record NativeFrame(TrafficView View, bool Connected, string Status, string Source, long TodayDownload, long TodayUpload, long DownloadTargetTotal, long UploadTargetTotal)
 {
+    public string? QuotaText { get; init; }
     public static NativeFrame Empty => new(new(0, 0, null, null, 0, 0, 0), false, Strings.T("正在连接…"), "", 0, 0, 0, 0);
 }
 public record Screen(string Name, Win.Rect Work, double Scale);
@@ -145,6 +146,12 @@ public sealed class NativeMonitor : IDisposable
         var engine = new TrafficEngine();
         using var store = new TrafficStore(Path.Combine(root, "traffic.sqlite"));
         var today = store.Today();
+        long todayDownload = today.Values.Sum(a => a.Download), todayUpload = today.Values.Sum(a => a.Upload);
+        long observedBytes = store.ObservedBytes();
+        string? quotaText = null;
+        string quotaLanguage = "";
+        DateTime quotaUpdated = default;
+        double forecastAt = -60;
         var timeline = new TimelineRecorder(store);
         DateTime day = DateTime.Today, configTime = config.ModifiedUtc;
         string endpoint = config.Endpoint, secret = config.ProtectedSecret;
@@ -187,6 +194,9 @@ public sealed class NativeMonitor : IDisposable
                         store.Prune(day);
                         store.PruneTimeline(DateTimeOffset.UtcNow);
                         today = store.Today();
+                        todayDownload = today.Values.Sum(a => a.Download);
+                        todayUpload = today.Values.Sum(a => a.Upload);
+                        forecastAt = -60;
                     }
                     // Consume clear requests even while the API is unavailable, before pending history can flush.
                     if (File.Exists(clearPath))
@@ -194,12 +204,26 @@ public sealed class NativeMonitor : IDisposable
                         timeline.Clear();
                         store.Clear();
                         today.Clear();
+                        todayDownload = todayUpload = 0;
+                        quotaText = null;
+                        forecastAt = -60;
                         File.Delete(clearPath);
                     }
                     if (watch.Elapsed.TotalSeconds - prunedAt >= 60)
                     {
                         store.PruneTimeline(DateTimeOffset.UtcNow);
                         prunedAt = watch.Elapsed.TotalSeconds;
+                    }
+                    // Forecasting depends on local records, including while the core is offline.
+                    double now = watch.Elapsed.TotalSeconds;
+                    if (!cfg.ShowQuotaForecast || !cfg.HasQuota) { quotaText = null; forecastAt = -60; }
+                    else if (now - forecastAt >= 60 || quotaUpdated != cfg.QuotaUpdatedUtc || quotaLanguage != Strings.Language)
+                    {
+                        var estimate = QuotaForecast.Calculate(cfg, observedBytes, store.RecentDailyTrend(day))!.Value;
+                        quotaText = Strings.Format("预计可用 · {0}", estimate.DurationText);
+                        quotaLanguage = Strings.Language;
+                        quotaUpdated = cfg.QuotaUpdatedUtc;
+                        forecastAt = now;
                     }
                     if (watch.Elapsed.TotalSeconds >= retryAt)
                     {
@@ -215,12 +239,16 @@ public sealed class NativeMonitor : IDisposable
                             store.Add(increments);
                             foreach (var increment in increments)
                             {
+                                observedBytes += increment.Download + increment.Upload;
                                 if (increment.Day.Date != day)
                                     continue;
+                                todayDownload += increment.Download;
+                                todayUpload += increment.Upload;
                                 today.TryGetValue(increment.Target, out var old);
                                 today[increment.Target] = new((old?.Download ?? 0) + increment.Download, (old?.Upload ?? 0) + increment.Upload);
                             }
                             timeline.Observe(increments, sampleTime, sampledAt, cfg.RecordTimeline);
+
                         }
                         catch (IOException error)
                         {
@@ -230,7 +258,10 @@ public sealed class NativeMonitor : IDisposable
                         var view = engine.View(cfg.SingleConnection);
                         today.TryGetValue(view.DownloadTop?.Target ?? "", out var down);
                         today.TryGetValue(view.UploadTop?.Target ?? "", out var up);
-                        Volatile.Write(ref frame, new(view, true, status, client.Source, today.Values.Sum(a => a.Download), today.Values.Sum(a => a.Upload), down?.Download ?? 0, up?.Upload ?? 0));
+                        Volatile.Write(ref frame, new(view, true, status, client.Source, todayDownload, todayUpload, down?.Download ?? 0, up?.Upload ?? 0)
+                        {
+                            QuotaText = quotaText
+                        });
                         Interlocked.Increment(ref success);
                     }
                 }
@@ -243,8 +274,9 @@ public sealed class NativeMonitor : IDisposable
                     Volatile.Write(ref frame, NativeFrame.Empty with
                     {
                         Status = Strings.T("连接中断 · 自动重连"),
-                        TodayDownload = today.Values.Sum(a => a.Download),
-                        TodayUpload = today.Values.Sum(a => a.Upload)
+                        TodayDownload = todayDownload,
+                        TodayUpload = todayUpload,
+                        QuotaText = quotaText
                     });
                     Diagnostics.Write(root, "monitor-read", error);
                     retryAt = watch.Elapsed.TotalSeconds + retrySeconds;
@@ -252,6 +284,11 @@ public sealed class NativeMonitor : IDisposable
                     Interlocked.Increment(ref failures);
                 }
                 var latest = Volatile.Read(ref frame);
+                if (latest.QuotaText != quotaText)
+                {
+                    latest = latest with { QuotaText = quotaText };
+                    Volatile.Write(ref frame, latest);
+                }
                 // Publish changes immediately; an idle heartbeat every 15 seconds avoids repeated disk writes.
                 if (published == null || published.connected != latest.Connected || published.status != latest.Status || published.source != latest.Source || watch.Elapsed.TotalSeconds - publishedAt >= 15)
                 {
@@ -535,7 +572,7 @@ public sealed class NativeMonitor : IDisposable
                     screen = preferred;
             }
             double ww = screen.Work.Right - screen.Work.Left, hh = screen.Work.Bottom - screen.Work.Top;
-            int logicalWidth = mini ? 220 : 304, logicalHeight = mini ? 58 : 28 + (cfg.ShowSpeed ? 22 : 0) + (cfg.ShowDownload || cfg.ShowUpload ? (cfg.ShowTargetTotal ? 91 : 76) : 0) + (cfg.ShowTotal ? 19 : 0) + 23;
+            int logicalWidth = mini ? 220 : 304, logicalHeight = mini ? 58 : 28 + (cfg.ShowSpeed ? 22 : 0) + (cfg.ShowDownload || cfg.ShowUpload ? (cfg.ShowTargetTotal ? 91 : 76) : 0) + (cfg.ShowTotal ? 19 : 0) + (cfg.ShowQuotaForecast && cfg.HasQuota ? 19 : 0) + 23;
             drawScale = screen.Scale * Math.Min(cfg.UiScale, Math.Min((ww - 16 * screen.Scale) / (logicalWidth * screen.Scale), (hh - 16 * screen.Scale) / (logicalHeight * screen.Scale)));
             drawScale = Math.Max(0.5, drawScale);
             int width = Math.Max(1, (int)Math.Round(logicalWidth * drawScale)), height = Math.Max(1, (int)Math.Round(logicalHeight * drawScale));
@@ -1000,6 +1037,25 @@ public sealed class NativeMonitor : IDisposable
             assertions++;
             canvas.Render(Volatile.Read(ref frame), config, mini);
             canvas.SaveBitmap(Path.Combine(output, "native-detail.bmp"));
+            int heightBefore = pixelHeight;
+            config.ShowQuotaForecast = true;
+            config.QuotaUpdatedUtc = DateTime.UtcNow;
+            config.QuotaGB = 48;
+            ApplyGeometry();
+            if (pixelHeight != heightBefore + (int)Math.Round(19 * drawScale)) throw new Exception("Quota row height was not reserved.");
+            assertions++;
+            var preview = Volatile.Read(ref frame) with { QuotaText = Strings.Format("预计可用 · {0}", new QuotaForecast(48_000_000_000, 1_000_000_000, 7).DurationText) };
+            canvas.Render(preview, config, mini);
+            canvas.SaveBitmap(Path.Combine(output, "native-quota.bmp"));
+            uint quotaGdi = Win.GetGuiResources(process.Handle, 0);
+            for (int i = 0; i < 10000; i++) canvas.Render(preview, config, mini);
+            if (Win.GetGuiResources(process.Handle, 0) != quotaGdi) throw new Exception("Quota painting retained GDI resources.");
+            assertions++;
+            config.MiniMode = true; compact.Reset(); RefreshMode(); ApplyGeometry();
+            if (pixelHeight != (int)Math.Round(58 * drawScale)) throw new Exception("Quota changed mini mode size.");
+            assertions++;
+            config.MiniMode = false; config.ShowQuotaForecast = false; config.QuotaUpdatedUtc = default;
+            compact.Reset(); RefreshMode(); ApplyGeometry();
             config.Visible = false;
             ApplyVisibility();
             OpenSettings(true);

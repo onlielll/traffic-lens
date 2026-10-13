@@ -200,6 +200,12 @@ public sealed class Canvas : IDisposable
                 12, y, logicalWidth - 24, 18, 10, Muted);
             y += 19;
         }
+        if (config.ShowQuotaForecast && config.HasQuota)
+        {
+            Text(frame.QuotaText ?? Strings.T("暂无可用趋势"),
+                12, y, logicalWidth - 24, 18, 10, Muted);
+            y += 19;
+        }
         Stroke(Line, (12, y + 2), (logicalWidth - 12, y + 2));
         Text(frame.Connected ? "●" : "○", 12, y + 4, 10, 16, 9, frame.Connected ? Down : Muted);
         Text(frame.Connected ? Strings.Format("代理 {0} · 未知 {1}", view.ProxyCount, view.UnknownCount) : Strings.T("连接中断 · 自动重连"),

@@ -78,6 +78,7 @@ static class Test
         await ReliabilityTests.Run();
         PresentationTests.Run();
         StorageTests.Run();
+        ForecastTests.Run();
         TimelineTests.Run();
         LocalizationTests.Run();
         await TransportTests.Run();

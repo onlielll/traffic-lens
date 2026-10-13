@@ -21,6 +21,7 @@ Traffic Lens displays proxy upload and download speeds, the busiest targets, and
 - **Overlay controls** — Drag, snap to edges, lock, and enable click-through. Adjust opacity, scale, and always-on-top behavior.
 - **Automatic mini mode** — Keep key speeds visible and expand when traffic exceeds your thresholds.
 - **Preferences** — Choose displayed metrics, light/dark/system appearance, Chinese or English, tray controls, and optional startup with Windows.
+- **Allowance forecast** — Enter your remaining GB to estimate days left from the last seven recorded days. Optional in the expanded overlay; off by default.
 
 <details>
 <summary>Settings and timeline</summary>
@@ -72,6 +73,8 @@ Core online means the API is reachable. After system proxy and TUN are turned of
 Observed totals cover increments seen while monitoring. Short connections and disconnected periods may be missed. Process information depends on Mihomo, and HTTPS connections do not identify the downloaded file.
 
 Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change routing rules. Uninstalling preserves local settings and records. Damaged settings are preserved as settings.json.corrupt-* backups. Open diagnostic logs from Connection; they contain timestamps, error types and codes, without domains, API addresses or secrets.
+
+Enter your current remaining allowance (decimal GB) in Traffic history → Allowance forecast. The estimate uses the last seven recorded days, excluding today, and subtracts subsequently observed upload and download. It needs a previous recorded day; clearing history does not restore spent allowance. Usage on other devices, unmonitored traffic, node multipliers and plan expiry are not included. Update the allowance from your provider when needed. Settings refresh every five seconds; the overlay forecast refreshes every minute.
 
 ## Development
 

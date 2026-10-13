@@ -17,6 +17,7 @@ public sealed class TimelinePanel : StackPanel, IDisposable
 {
     readonly MonitorApp app;
     readonly Action changed;
+    string choicesLanguage = "";
     readonly ComboBox period = new() { MinWidth = 112, Margin = new Thickness(0, 0, 8, 8) };
     readonly ComboBox metric = new() { MinWidth = 130, Margin = new Thickness(0, 0, 8, 8) };
     readonly ComboBox target = new() { MinWidth = 180, MaxWidth = 320, IsEditable = true, IsTextSearchEnabled = true, Margin = new Thickness(0, 0, 0, 8) };
@@ -183,8 +184,12 @@ public sealed class TimelinePanel : StackPanel, IDisposable
     void SyncChoices()
     {
         syncing = true;
-        period.ItemsSource = new[] { "近 10 分钟", "近 1 小时", "今天", "近 24 小时" }.Select(Strings.T).ToArray();
-        metric.ItemsSource = new[] { "速率峰值", "平均速率", "每分钟用量" }.Select(Strings.T).ToArray();
+        if (choicesLanguage != Strings.Language)
+        {
+            period.ItemsSource = new[] { "近 10 分钟", "近 1 小时", "今天", "近 24 小时" }.Select(Strings.T).ToArray();
+            metric.ItemsSource = new[] { "速率峰值", "平均速率", "每分钟用量" }.Select(Strings.T).ToArray();
+            choicesLanguage = Strings.Language;
+        }
         period.SelectedIndex = app.Config.TimelineRange == 0 ? (app.Config.TimelineRecentMinutes == 10 ? 0 : 1) : app.Config.TimelineRange + 1;
         metric.SelectedIndex = app.Config.TimelineMetric == 1 ? 2 : app.Config.TimelinePeaks ? 0 : 1;
         syncing = false;
@@ -197,7 +202,9 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         var names = rows.Select(r => r.Target).Take(200).ToList();
         if (selectedTarget.Length > 0 && !names.Contains(selectedTarget))
             names.Add(selectedTarget);
-        target.ItemsSource = new[] { Strings.T("全部代理流量") }.Concat(names).ToArray();
+        var items = new[] { Strings.T("全部代理流量") }.Concat(names).ToArray();
+        if (target.ItemsSource is not string[] existing || !existing.SequenceEqual(items))
+            target.ItemsSource = items;
         target.SelectedItem = selectedTarget.Length == 0 ? Strings.T("全部代理流量") : selectedTarget;
         target.Text = selectedTarget.Length == 0 ? Strings.T("全部代理流量") : selectedTarget;
         syncing = false;

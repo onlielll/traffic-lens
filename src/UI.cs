@@ -123,17 +123,19 @@ public static class Ui
         bool changed = AppTheme.Apply(mode, systemChanged);
         if (!changed && window.Resources.MergedDictionaries.Count != 0)
             return;
+        bool initial = window.Resources.MergedDictionaries.Count == 0;
         foreach (string key in AppTheme.Colors.Keys)
         {
             var brush = PaletteBrush(key);
             ColorSlots[key].Value = Color(key);
-            window.Resources[key] = brush;
-            Application.Current.Resources[key] = brush;
-            window.Resources[key + "Color"] = brush.Color;
-            Application.Current.Resources[key + "Color"] = brush.Color;
+            if (initial)
+            {
+                window.Resources[key] = brush;
+                Application.Current.Resources[key] = brush;
+            }
         }
         string assembly = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name!;
-        window.Resources.MergedDictionaries.Clear();
+        if (!initial) return;
         window.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
             Source = new Uri("/" + assembly + ";component/Theme.xaml", UriKind.Relative)
@@ -270,6 +272,7 @@ public sealed class SettingsWindow : Window
     int currentPage, transitionVersion;
     DateTime lastStats = DateTime.MinValue;
     TimelinePanel? timeline;
+    QuotaPanel? quota;
     AppearancePicker? appearance;
     readonly TranslateTransform navigationPosition = new();
     readonly Border navigationPill = new() { Height = 46, CornerRadius = new CornerRadius(12), Background = Ui.Selected, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false };
@@ -493,6 +496,8 @@ public sealed class SettingsWindow : Window
             () => app.Config.ShowTotal, value => app.Config.ShowTotal = value, false);
         Toggle(display, "最快目标累计", "额外显示第一名目标今天的流量。",
             () => app.Config.ShowTargetTotal, value => app.Config.ShowTargetTotal = value, false);
+        Toggle(display, "额度预计可用天数", "仅在展开的悬浮窗显示；在流量记录中填写剩余额度。",
+            () => app.Config.ShowQuotaForecast, value => app.Config.ShowQuotaForecast = value, false);
         page.Children.Add(Ui.Card(display));
 
         var layout = Section("大小与位置");
@@ -570,6 +575,7 @@ public sealed class SettingsWindow : Window
         summary.Children.Add(total);
         summary.Children.Add(Ui.Label("保留最近 30 天 · 全部存储在本机", 11, Ui.Muted));
         rankingView.Children.Add(Ui.Card(summary, new Thickness(18)));
+
 
         var tabs = new Grid { Width = 256, Height = 40, HorizontalAlignment = HorizontalAlignment.Left };
         statisticsPill.Margin = new Thickness(4);
@@ -651,6 +657,8 @@ public sealed class SettingsWindow : Window
         table.Children.Add(emptyRows);
         rankingView.Children.Add(Ui.Card(table, new Thickness(8)));
         rankingView.Children.Add(Ui.Label("点击目标查看时间线", 11, Ui.Muted));
+        quota = new QuotaPanel(app);
+        rankingView.Children.Add(Ui.Card(quota));
 
         var history = Section("时间线");
         Toggle(history, "记录流量时间线", "逐秒保存 · 最近 24 小时",
@@ -1018,6 +1026,39 @@ public sealed class SettingsWindow : Window
         System.IO.File.WriteAllText(System.IO.Path.Combine(output, "statistics-ui-test.txt"), "PASS: usage view first, single visible view, routed mouse/Enter target drill-in, keyboard selection survives refresh, 100 switches without retained clocks, clipped/inset card and rounded rows\n");
     }
 
+    public void PrepareQuotaForTest()
+    {
+        const long GB = 1_000_000_000;
+        for (int i = 1; i <= 7; i++) app.Store.Add(new[] { new Increment(DateTime.Today.AddDays(-i), "downloads.example", GB * 3 / 4, GB / 4) });
+        app.Config.QuotaGB = 48;
+        app.Config.QuotaBaselineBytes = app.Store.ObservedBytes();
+        app.Config.QuotaUpdatedUtc = DateTime.UtcNow;
+        app.Config.ShowQuotaForecast = true;
+        app.Save();
+        quota!.Refresh(true);
+    }
+
+    public void VerifyReuseForTest(string output)
+    {
+        SelectPage(2); SelectStatisticsView(0, false); RefreshRows();
+        var entries = rows.ItemsSource;
+        RefreshRows();
+        if (!ReferenceEquals(entries, rows.ItemsSource)) throw new InvalidOperationException("Unchanged ranking rebuilt its containers.");
+        var theme = Resources.MergedDictionaries.Single();
+        for (int i = 0; i < 100; i++) SetTheme(i % 2 == 0 ? "light" : "dark");
+        if (!ReferenceEquals(theme, Resources.MergedDictionaries.Single())) throw new InvalidOperationException("Theme switch rebuilt styles.");
+        quota!.VerifyCommitForTest();
+        quota.Refresh(true);
+        if (quota.DurationForTest != Strings.Format("约 {0:0} 天", 48)) throw new InvalidOperationException("Quota estimate was not shown.");
+        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "reuse-quota-test.txt"), "PASS: ranking source reused, 100 theme switches reuse styles, quota input/validation/subtraction and recorded-days forecast\n");
+    }
+
+    public void ShowQuotaForTest()
+    {
+        SelectPage(2); SelectStatisticsView(0, false);
+        quota!.BringIntoView();
+    }
+
     public void OpenAppearanceForTest() => appearance?.OpenForTest();
     public void CloseAppearanceForTest() => appearance?.CloseForTest();
     public UIElement? AppearancePreviewForTest => appearance?.PreviewForTest;
@@ -1199,7 +1240,7 @@ public sealed class SettingsWindow : Window
             app.Status.StartsWith("已连接 · ") || app.Status.StartsWith("Connected · ")
             ? Strings.T("内核在线 · ") + Strings.T(app.Source) : Strings.T(app.Status);
         connection.Foreground = app.Connected ? Ui.Down : Ui.Muted;
-        if (pages[2].Visibility == Visibility.Visible && DateTime.UtcNow - lastStats > TimeSpan.FromSeconds(5))
+        if (pages[2].Visibility == Visibility.Visible && WindowState != WindowState.Minimized && DateTime.UtcNow - lastStats > TimeSpan.FromSeconds(5))
             RefreshRows();
     }
 
@@ -1209,6 +1250,13 @@ public sealed class SettingsWindow : Window
             return;
         try
         {
+            if (statisticsView == 1)
+            {
+                timeline?.UpdateTargets(app.Store.Query(DateTime.Today.AddDays(-6), DateTime.Today));
+                timeline?.Refresh(true);
+                lastStats = DateTime.UtcNow;
+                return;
+            }
             var data = app.Store.Query(DateTime.Today.AddDays(range.SelectedIndex == 1 ? -6 : 0), DateTime.Today);
             total.Text = $"↓ {Display.Bytes(data.Sum(row => row.Download))}    ↑ {Display.Bytes(data.Sum(row => row.Upload))}";
             IEnumerable<DailyRow> ordered = sort.SelectedIndex switch
@@ -1219,13 +1267,14 @@ public sealed class SettingsWindow : Window
             };
             string? selected = (rows.SelectedItem as UsageRow)?.Target;
             var entries = ordered.Select(row => new UsageRow(row.Target, Display.Bytes(row.Download), Display.Bytes(row.Upload))).ToList();
-            rows.ItemsSource = entries;
+            if (rows.ItemsSource is not List<UsageRow> previous || !previous.SequenceEqual(entries))
+                rows.ItemsSource = entries;
+            else
+                entries = previous; // Keep containers and selection when displayed values have not changed.
             rows.SelectedItem = entries.FirstOrDefault(row => row.Target == selected);
             rows.Height = Math.Clamp(entries.Count * 44 + 46, 140, 280);
             emptyRows.Visibility = rows.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            timeline?.UpdateTargets(range.SelectedIndex == 1 ? data : app.Store.Query(DateTime.Today.AddDays(-6), DateTime.Today));
-            if (statisticsView == 1)
-                timeline?.Refresh(true);
+            quota?.Refresh();
             lastStats = DateTime.UtcNow;
         }
         catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)

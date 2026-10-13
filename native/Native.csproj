@@ -28,5 +28,5 @@
     <Compile Include="..\src\PresentationLogic.cs" Link="PresentationLogic.cs" />
     <EmbeddedResource Include="..\assets\traffic.ico" LogicalName="ProxyTrafficFloat.traffic.ico" />
     <EmbeddedResource Include="..\assets\heroicons\glyphs.bin" LogicalName="TrafficLens.ToolbarPaths" />
-  </ItemGroup>
+  <Compile Include="..\src\QuotaForecast.cs" Link="QuotaForecast.cs" /></ItemGroup>
 </Project>

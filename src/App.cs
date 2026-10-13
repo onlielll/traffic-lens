@@ -245,6 +245,8 @@ public sealed class MonitorApp : Application
             await Task.Delay(240);
             settings.VerifyTimelineForTest(output);
             await settings.VerifyStatisticsForTest(output);
+            settings.PrepareQuotaForTest();
+            settings.VerifyReuseForTest(output);
             foreach (string language in new[] { "zh-CN", "en" })
             {
                 settings.SetLanguage(language);
@@ -260,6 +262,8 @@ public sealed class MonitorApp : Application
                         SavePage($"settings-{language}{(small ? "-small" : "")}-{i}.png");
                         if (i == 2)
                         {
+                            settings.ShowQuotaForTest(); await Task.Delay(240);
+                            SavePage($"quota-{language}{(small ? "-small" : "")}.png");
                             settings.ShowTimeline();
                             await Task.Delay(240);
                             SavePage($"timeline-speed-{language}{(small ? "-small" : "")}.png");

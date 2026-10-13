@@ -53,11 +53,13 @@
     <Setter Property="Template"><Setter.Value>
       <ControlTemplate TargetType="CheckBox">
         <Grid Width="38" Height="22">
-          <Border x:Name="Track" CornerRadius="11" BorderThickness="1" BorderBrush="{StaticResource ControlBorder}">
-            <Border.Background><SolidColorBrush Color="{StaticResource ToggleOffColor}"/></Border.Background>
-            <Ellipse x:Name="Knob" Width="14" Height="14" Fill="{StaticResource Knob}" Margin="3" HorizontalAlignment="Left">
-              <Ellipse.RenderTransform><TranslateTransform x:Name="KnobPosition"/></Ellipse.RenderTransform>
-            </Ellipse>
+          <Border x:Name="Track" CornerRadius="11" BorderThickness="1" BorderBrush="{StaticResource ControlBorder}" Background="{StaticResource ToggleOff}">
+            <Grid>
+              <Border x:Name="CheckedTrack" Background="{StaticResource Accent}" CornerRadius="10" Opacity="0"/>
+              <Ellipse x:Name="Knob" Width="14" Height="14" Fill="{StaticResource Knob}" Margin="3" HorizontalAlignment="Left">
+                <Ellipse.RenderTransform><TranslateTransform x:Name="KnobPosition"/></Ellipse.RenderTransform>
+              </Ellipse>
+            </Grid>
           </Border>
         </Grid>
         <ControlTemplate.Triggers>
@@ -67,13 +69,13 @@
               <DoubleAnimation Storyboard.TargetName="KnobPosition" Storyboard.TargetProperty="X" To="16" Duration="0:0:0.16">
                 <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
               </DoubleAnimation>
-              <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="{StaticResource AccentColor}" Duration="0:0:0.16"/>
+              <DoubleAnimation Storyboard.TargetName="CheckedTrack" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.16"/>
             </Storyboard></BeginStoryboard></Trigger.EnterActions>
             <Trigger.ExitActions><BeginStoryboard><Storyboard>
               <DoubleAnimation Storyboard.TargetName="KnobPosition" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.16">
                 <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
               </DoubleAnimation>
-              <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="{StaticResource ToggleOffColor}" Duration="0:0:0.16"/>
+              <DoubleAnimation Storyboard.TargetName="CheckedTrack" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16"/>
             </Storyboard></BeginStoryboard></Trigger.ExitActions>
           </Trigger>
           <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Track" Property="Opacity" Value="0.85"/></Trigger>
