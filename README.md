@@ -1,82 +1,97 @@
-<p align="center"><img src="assets/icon-preview.png" width="64" alt="Traffic Lens"></p>
+<p align="center"><img src="assets/icon-preview.png" width="56" alt="Traffic Lens"></p>
 <h1 align="center">Traffic Lens</h1>
-<p align="center"><strong>Mihomo 代理流量监控悬浮窗</strong></p>
-<p align="center"><a href="https://github.com/onlielll/traffic-lens/releases">下载</a> · <a href="#快速开始">快速开始</a> · <a href="README.en.md">English</a></p>
-<p align="center"><a href="https://github.com/onlielll/traffic-lens/actions/workflows/release.yml"><img src="https://github.com/onlielll/traffic-lens/actions/workflows/release.yml/badge.svg" alt="Build"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6dddc2" alt="MIT License"></a></p>
+<p align="center"><strong>找出谁在消耗代理流量。</strong></p>
+<p align="center">Windows 桌面悬浮窗 · 适用于 Clash Verge / Mihomo</p>
+<p align="center">
+  <a href="https://github.com/onlielll/traffic-lens/releases/tag/v2.0.0"><img src="https://img.shields.io/badge/preview-v2.0.0-5b6ee1?style=flat-square" alt="v2.0.0 预览版"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078d4?style=flat-square" alt="Windows 10 / 11">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b9b87?style=flat-square" alt="MIT 许可证"></a>
+</p>
+<p align="center">
+  <strong><a href="https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-setup.exe">下载 Windows x64 安装包</a></strong> ·
+  <a href="https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-portable.zip">便携版</a> ·
+  <a href="README.en.md">English</a>
+</p>
 
-Traffic Lens 在 Windows 桌面显示代理上下行速率、当前下载与上传最快的目标，并记录每日域名用量。通过 Mihomo 本地接口读取数据，适用于 Clash Verge 等使用 Mihomo 的客户端。
+![Traffic Lens 实时排行与迷你模式](docs/images/overview.png)
 
-<table>
-<tr>
-<td width="60%" valign="top"><strong>详细模式</strong><br><br><img src="docs/images/overlay.png" width="400" alt="详细悬浮窗"></td>
-<td width="40%" valign="top"><strong>迷你模式</strong><br><br><img src="docs/images/mini.png" width="250" alt="迷你悬浮窗"></td>
-</tr>
-</table>
+流量突然增加时，直接查看下载与上传最快的域名、IP、代理节点及可获取的进程；想回看用量，再打开每日排行。
 
-## 核心功能
-
-- **实时排行**：分别显示下载和上传最快的目标，支持域名合并或单连接排行，展示可获取的节点与进程信息。
-- **每日统计**：查看今天、近七天的域名用量排行，默认保留 30 天记录。
-- **悬浮窗控制**：拖动、边缘吸附、锁定与点击穿透，可调整透明度、缩放和置顶状态。
-- **自动收起与展开**：迷你模式保留关键速率，超过设定阈值后自动展开。
-- **个性化设置**：展示内容独立开关，支持中文、英文、托盘控制与可选开机启动。
-
-<details>
-<summary>设置界面</summary>
-
-![设置](docs/images/settings.png)
-
-</details>
+- **看清来源** — 下载、上传分别排行，支持按域名合并或按单连接查看。
+- **留在桌面** — 迷你窗保留关键速率，流量超过阈值时自动展开；支持吸附、锁定与点击穿透。
+- **记录留在本机** — 每日用量保存 30 天，查看今天与近七天排行，无需上传流量记录。
 
 ## 下载
 
-在 [Releases](https://github.com/onlielll/traffic-lens/releases) 下载对应架构的安装包或便携包。
+**当前版本：v2.0.0 公开预览版。** 安装包与便携版均已包含运行环境，无需另装 .NET。
 
-| 电脑架构 | 文件标识 |
-| --- | --- |
-| Intel / AMD 64 位 | `win-x64` |
-| 32 位 Windows | `win-x86` |
-| Windows on ARM | `win-arm64` |
+| 电脑架构 | 安装包 | 便携版 |
+| --- | --- | --- |
+| **Intel / AMD 64 位（通常选这个）** | [Windows x64](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-portable.zip) |
+| 32 位 Windows | [Windows x86](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x86-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x86-portable.zip) |
+| Windows on ARM | [Windows ARM64](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-arm64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-arm64-portable.zip) |
 
-安装包包含运行环境，为当前用户安装，无需管理员权限。便携包解压后运行 `ProxyTrafficFloat.exe`。
+安装包为当前用户安装；便携版解压后运行 `ProxyTrafficFloat.exe`。
 
-运行目标为 Windows 10 1607+ 和 Windows 11。x64、x86 已在 Windows 11 上验证，ARM64 尚待设备实测。详细结果见 [验证报告](docs/VALIDATION.md)。
+面向 Windows 10 / 11。已在 Windows 11 验证 x64 与 x86 兼容环境；Windows 10、真实 32 位设备及 ARM64 尚待实测。[测试范围与内存实测](docs/VALIDATION.md) · [版本说明与校验文件](https://github.com/onlielll/traffic-lens/releases/tag/v2.0.0)
 
 ## 快速开始
 
-1. 启动 Mihomo 或 Clash Verge。
-2. 安装并运行 Traffic Lens，软件会自动发现本机 Mihomo 接口。
-3. 如果连接失败，在设置中填写本机 HTTP 地址（如 `http://127.0.0.1:9090`）或命名管道，并按需输入接口密钥。
+1. **打开 Clash Verge 或 Mihomo**，保持内核运行。
+2. **启动 Traffic Lens**，自动发现本机 Mihomo 接口。
+3. **查看悬浮窗**：下载、上传最快目标并排显示；从托盘打开设置，查看流量记录或调整展示内容。
 
-拖动空白区域移动窗口；顶部按钮用于设置、模式切换、锁定和隐藏。点击迷你窗可临时展开，开启点击穿透后可通过小锁或托盘解锁。
+<details>
+<summary>连接失败时，如何手动设置？</summary>
 
-默认自动展开条件：下载最快目标达到 1 MB/s，或上传最快目标达到 512 KB/s，持续 2 秒；低于阈值一半持续 10 秒后收起。阈值与延时可在设置中调整。
+在“连接与启动”中填写 Mihomo 本地 HTTP 地址（例如 `http://127.0.0.1:9090`）或命名管道；有接口密钥时一并填写。地址与密钥需和客户端当前配置一致。
 
-从托盘显示、隐藏或退出。关闭设置页后仍继续监控；语言在“连接与启动”中切换，立即生效。
+</details>
 
-## 统计与隐私
+## 悬浮窗与设置
 
-只读取本机 Mihomo 接口，最终 DIRECT 的连接与未知链路不计入代理流量。速度每秒采样，显示最近三秒的平均值。
+拖动空白区域移动窗口，靠近屏幕边缘自动吸附。顶部按钮用于设置、详细/迷你模式、锁定与隐藏；点击穿透后，仍可通过小锁或托盘解锁。
 
-“监测累计”记录软件运行期间观测到的增量，可能遗漏短连接及断线期间的流量，适合定位流量来源。进程信息取决于 Mihomo；HTTPS 连接无法识别具体下载文件。
+- **按需展示**：总速度、上下行最快目标、今日累计与目标累计分别开关。
+- **调整外观**：透明度、界面大小、锁定位置、鼠标穿透与始终置顶。
+- **自动展开**：默认下载最快目标达到 1 MB/s 或上传最快目标达到 512 KB/s，持续 2 秒展开；低于阈值一半持续 10 秒后收起。均可调整。
+- **日常使用**：中英文切换、托盘控制与可选开机启动。隐藏悬浮窗或关闭设置后仍继续监控，从托盘退出才停止。
 
-设置与统计存储在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥由 Windows DPAPI 加密。软件不上传统计、不修改分流规则。卸载后保留本机设置与记录。
+<details>
+<summary>查看设置界面</summary>
 
-## 开发
+![Traffic Lens 设置](docs/images/settings.png)
 
-需要 Windows 与 .NET 10 SDK；生成安装包还需要 Inno Setup 6。
+</details>
+
+## 统计口径与隐私
+
+只读取本机 Mihomo 接口，最终直连（DIRECT）与未知链路不计入代理流量。每秒采样，速率显示最近三秒平均值。
+
+**“监测累计”是软件运行期间观测到的用量，用于定位流量来源。** 短连接与断线期间可能漏记，不作为套餐计费依据；进程信息取决于 Mihomo，HTTPS 连接无法识别具体下载文件。
+
+设置与统计保存在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥使用 Windows DPAPI 加密。不上传统计、不修改 Clash 分流规则；卸载保留本机设置与记录。
+
+## 反馈与贡献
+
+遇到问题请提交 [Issue](https://github.com/onlielll/traffic-lens/issues)，附上软件版本、Windows 版本、Clash/Mihomo 客户端，以及复现步骤。截图前请遮盖接口密钥、订阅地址和私人连接信息。
+
+<details>
+<summary>从源码构建</summary>
+
+需要 Windows 与 .NET 10 SDK；生成安装包另需 Inno Setup 6。
 
 ```powershell
 .\build.ps1 -Runtime win-x64 -Test
 .\scripts\package.ps1 -Runtime win-x64 -IncludeSource
 ```
 
-其他架构使用 `win-x86` 或 `win-arm64`。输出位于 `dist/`，GitHub Actions 支持三个架构的自动构建。
+其他架构使用 `win-x86` 或 `win-arm64`，输出位于 `dist/`。
+
+</details>
 
 [贡献说明](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [验证报告](docs/VALIDATION.md)
 
-## 许可证
+---
 
-Copyright © 2026 **onlielll** · [MIT](LICENSE)
-
-工具栏使用 [Heroicons](https://github.com/tailwindlabs/heroicons)。随包组件的许可见 [第三方说明](THIRD-PARTY-NOTICES.md)。
+Copyright © 2026 **onlielll** · [MIT](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md)

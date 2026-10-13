@@ -1,45 +1,48 @@
-# 仓库介绍 · Repository introduction
-
-## GitHub Description
-
-> Windows 上的 Mihomo 流量监控悬浮窗：实时排行与每日统计。Mihomo traffic overlay for Windows: live rankings and daily usage.
-
-Suggested topics: `windows`, `mihomo`, `clash`, `traffic-monitor`, `desktop`, `csharp`.
+# 版本说明 · Release notes
 
 ## 首次 Release · v2.0.0 preview
 
-### 中文
+Windows 上的 Mihomo 代理流量监控悬浮窗：实时查看流量来源，回看每日用量。
 
-Traffic Lens 2.0.0 是 Windows 上的 Mihomo 代理流量监控悬浮窗。
+**[下载 Windows x64 安装包](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-setup.exe)** · [便携版](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-portable.zip) · [使用说明](https://github.com/onlielll/traffic-lens#readme)
 
-- 分别显示下载与上传最快目标，支持域名合并和单连接排行。
-- 保存每日域名用量，提供今天与近七天排行。
-- 支持迷你模式、阈值自动展开、边缘吸附、锁定穿透，以及中英文设置。
+![Traffic Lens](https://raw.githubusercontent.com/onlielll/traffic-lens/main/docs/images/overview.png)
 
-安装包包含运行环境，保持 Mihomo 或 Clash Verge 运行即可使用。统计仅包含监控期间观测到的代理流量，短连接和断线期间可能漏记。
+### 主要功能
 
-### English
+- 下载、上传最快目标分别排行，支持域名合并或单连接查看。
+- 每日域名用量保留 30 天，提供今天与近七天排行。
+- 迷你模式与阈值自动展开，支持边缘吸附、锁定穿透、托盘控制和中英文。
 
-Traffic Lens 2.0.0 is a Windows overlay for Mihomo proxy traffic.
+运行环境已包含，无需另装 .NET。保持 Clash Verge 或 Mihomo 内核运行即可开始监控。
 
-- Separate download and upload leaders, with domain grouping or connection ranking.
-- Daily domain usage, with rankings for today and the past seven days.
-- Mini mode, threshold-based expansion, edge snapping, click-through locking, and Chinese/English settings.
+<details>
+<summary>其他架构下载 / Other architectures</summary>
 
-Packages include the runtime. Keep Mihomo or Clash Verge running. Totals cover observed proxy traffic while monitoring; short connections and disconnected periods may be missed.
+| 架构 / Architecture | 安装包 / Installer | 便携版 / Portable |
+| --- | --- | --- |
+| x86 | [EXE](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x86-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x86-portable.zip) |
+| ARM64 | [EXE](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-arm64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-arm64-portable.zip) |
 
-### 下载 · Downloads
+</details>
 
-| 电脑 / Device | 文件标识 / Identifier |
-| --- | --- |
-| Intel / AMD 64 位 / 64-bit | `win-x64` |
-| 32 位 Windows / 32-bit Windows | `win-x86` |
-| Windows on ARM | `win-arm64` |
+<details>
+<summary>English</summary>
 
-提供安装包与便携包。卸载保留本机设置与统计。 / Installers and portable packages are available. Uninstalling preserves local settings and statistics.
+A Windows overlay for Mihomo proxy traffic. Find the busiest targets and review daily usage.
 
-运行目标：Windows 10 1607+ 和 Windows 11。x64、x86 已在 Windows 11 验证；ARM64 尚待设备实测。 / Targets Windows 10 1607+ and Windows 11. x64 and x86 have been tested on Windows 11; ARM64 hardware testing is pending.
+- Separate download and upload leaders, grouped by domain or ranked by connection.
+- Daily domain usage retained for 30 days, with rankings for today and the past seven days.
+- Mini view, threshold-based expansion, edge snapping, click-through locking, tray controls, and Chinese/English preferences.
 
-[验证报告 / Validation](https://github.com/onlielll/traffic-lens/blob/v2.0.0/docs/VALIDATION.md) · [使用说明 / Usage](https://github.com/onlielll/traffic-lens/tree/v2.0.0#readme)
+The runtime is included. Keep the Clash Verge or Mihomo core running to monitor traffic. [English guide](https://github.com/onlielll/traffic-lens/blob/main/README.en.md)
 
-Copyright © 2026 **onlielll** · [MIT](https://github.com/onlielll/traffic-lens/blob/v2.0.0/LICENSE) · [Third-party notices](https://github.com/onlielll/traffic-lens/blob/v2.0.0/THIRD-PARTY-NOTICES.md)
+</details>
+
+### 版本状态 / Release status
+
+**v2.0.0 公开预览版 / Public preview.** 面向 Windows 10 / 11，已在 Windows 11 验证 x64 与 x86 兼容环境；其他设备的实测范围见 [验证报告 / Validation](https://github.com/onlielll/traffic-lens/blob/v2.0.0/docs/VALIDATION.md)。
+
+监测累计仅包含运行期间观测到的代理流量；短连接与断线期间可能漏记。 / Observed totals cover traffic seen while monitoring; short connections and disconnected periods may be missed.
+
+[反馈 / Report an issue](https://github.com/onlielll/traffic-lens/issues) · [MIT](https://github.com/onlielll/traffic-lens/blob/v2.0.0/LICENSE)
