@@ -27,6 +27,8 @@ Traffic Lens displays proxy upload and download speeds, the busiest targets, and
 
 ![Settings](docs/images/settings-en.png)
 
+![Usage](docs/images/usage-en.png)
+
 ![Timeline](docs/images/timeline-en.png)
 
 </details>
@@ -61,7 +63,7 @@ Use the tray to show, hide, or exit. Closing Settings leaves monitoring active. 
 
 Traffic Lens reads only the local Mihomo API. Final DIRECT connections and unknown routes are excluded from proxy totals. Connections are sampled once per second; displayed speeds average the last three seconds.
 
-Timeline recording is off by default. Enable it in Traffic history. Complete second-level records roll over after 24 hours; daily rankings retain 30 days. Bursts view avoids magnifying tiny traffic into full-height spikes; Detail fits the scale to low rates. The chart aggregates only the visible range, preserves rate peaks in peak mode, and restores second-level detail when zoomed in. Selected interval totals use recorded bytes rather than the interpolated curve. Timestamps are local; unmonitored periods remain gaps. Older minute records retain their original precision.
+Traffic history has Usage and Timeline tabs. Select a target in Usage to open its chart. Scroll normally to move the page; use Ctrl + scroll or the +/− buttons to zoom. Timeline recording is off by default; enable it in the Timeline tab. Complete second-level records roll over after 24 hours; daily rankings retain 30 days. Bursts view avoids magnifying tiny traffic into full-height spikes; Detail fits the scale to low rates. The chart aggregates only the visible range, preserves rate peaks in peak mode, and restores second-level detail when zoomed in. Selected interval totals use recorded bytes rather than the interpolated curve. Timestamps are local; unmonitored periods remain gaps. Older minute records retain their original precision.
 
 Core online means the API is reachable. After system proxy and TUN are turned off, the three-second average may briefly persist; daily totals remain.
 

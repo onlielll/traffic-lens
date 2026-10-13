@@ -212,6 +212,7 @@ public sealed class MonitorApp : Application
             settings.ShowTimeline();
             await Task.Delay(240);
             settings.VerifyTimelineForTest(output);
+            await settings.VerifyStatisticsForTest(output);
             foreach (string language in new[] { "zh-CN", "en" })
             {
                 settings.SetLanguage(language);
@@ -222,6 +223,7 @@ public sealed class MonitorApp : Application
                     for (int i = 0; i < 4; i++)
                     {
                         settings.SelectPage(i);
+                        if (i == 2) settings.SelectStatisticsView(0, false);
                         await Task.Delay(240);
                         SavePage($"settings-{language}{(small ? "-small" : "")}-{i}.png");
                         if (i == 2)
@@ -248,7 +250,10 @@ public sealed class MonitorApp : Application
                 settings.SetLanguage(language); settings.SelectPage(2); settings.ShowTimeline();
                 foreach (string theme in new[] { "light", "dark" })
                 {
-                    settings.SetTheme(theme); await Task.Delay(200);
+                    settings.SetTheme(theme);
+                    settings.SelectStatisticsView(0, false); await Task.Delay(240);
+                    SavePage("usage-" + language + "-" + theme + ".png");
+                    settings.ShowTimeline(); await Task.Delay(200);
                     settings.PreviewTimelineForTest(); await Task.Delay(240);
                     SavePage("timeline-interaction-"+language+"-"+theme+".png");
                 }

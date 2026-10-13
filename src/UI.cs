@@ -140,7 +140,7 @@ public static class Ui
         });
     }
 
-    public static Border Card(UIElement content, Thickness? padding = null) => new()
+    public static Border Card(UIElement content, Thickness? padding = null) => new RoundedCard()
     {
         Background = Panel,
         CornerRadius = new CornerRadius(16),
@@ -150,6 +150,19 @@ public static class Ui
         Margin = new Thickness(0, 0, 0, 12),
         Child = content
     };
+}
+
+// Border draws rounded corners but does not clip child backgrounds. Reuse one clip per card.
+sealed class RoundedCard : Border
+{
+    readonly RectangleGeometry outline = new();
+    public RoundedCard() => Clip = outline;
+    protected override void OnRenderSizeChanged(SizeChangedInfo info)
+    {
+        base.OnRenderSizeChanged(info);
+        outline.Rect = new Rect(info.NewSize);
+        outline.RadiusX = outline.RadiusY = CornerRadius.TopLeft;
+    }
 }
 
 public record DesktopScreen(string Name, int Left, int Top, int Right, int Bottom, double Scale)
@@ -231,7 +244,13 @@ public sealed class SettingsWindow : Window
     readonly TextBlock pageNote = Ui.Label("", 11, Ui.Muted);
     readonly TextBlock connection = Ui.Label("", 12, Ui.Down);
     readonly TextBlock total = Ui.Label("", 25);
-    readonly ListView rows = new() { Height = 250 };
+    readonly ListView rows = new() { Height = 280 };
+    sealed record UsageRow(string Target, string Down, string Up);
+    readonly StackPanel rankingView = new(), timelineView = new();
+    readonly List<Button> statisticsTabs = new();
+    readonly TranslateTransform statisticsPosition = new();
+    readonly Border statisticsPill = new() { Width = 124, CornerRadius = new CornerRadius(9), Background = Ui.Panel, BorderBrush = Ui.Line, BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false };
+    int statisticsView;
     readonly TextBlock emptyRows = Ui.Label("还没有监测记录\n有代理流量时，记录会自动出现在这里。", 12, Ui.Muted);
     readonly ComboBox range = new() { Width = 116 };
     readonly ComboBox sort = new() { Width = 148, Margin = new Thickness(8, 0, 0, 0) };
@@ -550,7 +569,27 @@ public sealed class SettingsWindow : Window
         total.Margin = new Thickness(0, 0, 0, 8);
         summary.Children.Add(total);
         summary.Children.Add(Ui.Label("保留最近 30 天 · 全部存储在本机", 11, Ui.Muted));
-        page.Children.Add(Ui.Card(summary, new Thickness(18)));
+        rankingView.Children.Add(Ui.Card(summary, new Thickness(18)));
+
+        var tabs = new Grid { Width = 256, Height = 40, HorizontalAlignment = HorizontalAlignment.Left };
+        statisticsPill.Margin = new Thickness(4);
+        statisticsPill.RenderTransform = statisticsPosition;
+        tabs.Children.Add(statisticsPill);
+        var tabButtons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4) };
+        foreach (string label in new[] { "用量排行", "时间线" })
+        {
+            int index = statisticsTabs.Count;
+            var button = Ui.Button(label, (_, _) => SelectStatisticsView(index));
+            button.Width = 124;
+            button.Margin = new Thickness(0);
+            button.Padding = new Thickness(8, 4, 8, 4);
+            button.Background = Brushes.Transparent;
+            button.BorderThickness = new Thickness(0);
+            statisticsTabs.Add(button);
+            tabButtons.Children.Add(button);
+        }
+        tabs.Children.Add(tabButtons);
+        page.Children.Add(new Border { Background = Ui.PaletteBrush("Control"), CornerRadius = new CornerRadius(12), Child = tabs, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 16) });
 
         Choice(range, "今天", "近 7 天");
         range.SelectedIndex = 0;
@@ -560,30 +599,49 @@ public sealed class SettingsWindow : Window
         AccessibleName(sort, "统计排序方式");
         range.SelectionChanged += (_, _) => { if (!syncing) RefreshRows(); };
         sort.SelectionChanged += (_, _) => { if (!syncing) RefreshRows(); };
-        var selectors = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+        var selectors = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
         selectors.Children.Add(range);
         selectors.Children.Add(sort);
+        rankingView.Children.Add(selectors);
 
-        var history = Section("时间线");
-        Toggle(history, "记录流量时间线", "逐秒保存 · 最近 24 小时",
-            () => app.Config.RecordTimeline, value => { app.Config.RecordTimeline = value; timeline?.Refresh(true); }, false);
-        timeline = new TimelinePanel(app, Changed);
-        history.Children.Add(timeline);
-        page.Children.Add(Ui.Card(history));
-
-        page.Children.Add(selectors);
         var columns = new GridView();
-        columns.Columns.Add(new GridViewColumn { Header = Strings.T("目标"), Width = 240, DisplayMemberBinding = new System.Windows.Data.Binding("Target") });
-        columns.Columns.Add(new GridViewColumn { Header = Strings.T("下载"), Width = 120, DisplayMemberBinding = new System.Windows.Data.Binding("Down") });
-        columns.Columns.Add(new GridViewColumn { Header = Strings.T("上传"), Width = 120, DisplayMemberBinding = new System.Windows.Data.Binding("Up") });
+        foreach (var column in new[] { ("目标", "Target", 240.0), ("下载", "Down", 120.0), ("上传", "Up", 120.0) })
+        {
+            var cell = new FrameworkElementFactory(typeof(TextBlock));
+            cell.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(column.Item2));
+            cell.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+            cell.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+            cell.SetValue(TextBlock.MarginProperty, new Thickness(12, 0, 12, 0));
+            if (column.Item2 == "Target")
+                cell.SetBinding(ToolTipProperty, new System.Windows.Data.Binding(column.Item2));
+            else
+                cell.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Right);
+            var header = Ui.Label(column.Item1, 12, Ui.Muted);
+            header.FontWeight = FontWeights.SemiBold;
+            header.HorizontalAlignment = column.Item2 == "Target" ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+            columns.Columns.Add(new GridViewColumn { Header = header, Width = column.Item3, CellTemplate = new DataTemplate { VisualTree = cell } });
+        }
         rows.View = columns;
-        AccessibleName(rows, "目标流量排行");
+        AccessibleName(rows, "目标流量排行", "点击目标查看时间线");
         rows.SizeChanged += (_, _) =>
         {
-            var available = Math.Max(220, rows.ActualWidth - 22);
-            columns.Columns[0].Width = available * 0.5;
-            columns.Columns[1].Width = available * 0.25;
-            columns.Columns[2].Width = available * 0.25;
+            double available = Math.Max(180, rows.ActualWidth - 12);
+            columns.Columns[0].Width = available * 0.52;
+            columns.Columns[1].Width = available * 0.24;
+            columns.Columns[2].Width = available * 0.24;
+        };
+        rows.PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(rows, source) is ListViewItem { Content: UsageRow row })
+                OpenTargetTimeline(row.Target);
+        };
+        rows.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter && rows.SelectedItem is UsageRow row)
+            {
+                OpenTargetTimeline(row.Target);
+                e.Handled = true;
+            }
         };
         var table = new Grid();
         table.Children.Add(rows);
@@ -591,7 +649,19 @@ public sealed class SettingsWindow : Window
         emptyRows.VerticalAlignment = VerticalAlignment.Center;
         emptyRows.TextAlignment = TextAlignment.Center;
         table.Children.Add(emptyRows);
-        page.Children.Add(Ui.Card(table, new Thickness(0)));
+        rankingView.Children.Add(Ui.Card(table, new Thickness(8)));
+        rankingView.Children.Add(Ui.Label("点击目标查看时间线", 11, Ui.Muted));
+
+        var history = Section("时间线");
+        Toggle(history, "记录流量时间线", "逐秒保存 · 最近 24 小时",
+            () => app.Config.RecordTimeline, value => { app.Config.RecordTimeline = value; timeline?.Refresh(true); }, false);
+        timeline = new TimelinePanel(app, Changed);
+        history.Children.Add(timeline);
+        timelineView.Children.Add(Ui.Card(history));
+        page.Children.Add(rankingView);
+        page.Children.Add(timelineView);
+        SelectStatisticsView(0, false);
+
         var clear = Ui.Button("清空记录", (_, _) =>
         {
             if (MessageBox.Show(this, Strings.T("清空每日统计和全部时间线记录？此操作无法撤销。"), Strings.T("清空记录"),
@@ -606,6 +676,37 @@ public sealed class SettingsWindow : Window
         clear.HorizontalAlignment = HorizontalAlignment.Left;
         page.Children.Add(clear);
         page.Children.Add(Ui.Label("仅记录监测期间的有效增量。短连接可能漏记，断线期间不补算；用于定位来源，不作为精确账单。", 11, Ui.Muted));
+    }
+
+    public void SelectStatisticsView(int index, bool animate = true)
+    {
+        bool moved = index != statisticsView;
+        double start = statisticsPosition.X;
+        statisticsPosition.BeginAnimation(TranslateTransform.XProperty, null);
+        statisticsView = index;
+        statisticsPosition.X = index * 124;
+        if (moved && animate && IsLoaded && SystemParameters.ClientAreaAnimation)
+            statisticsPosition.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(start, statisticsPosition.X, TimeSpan.FromMilliseconds(180))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.Stop
+            });
+        rankingView.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
+        timelineView.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+        for (int i = 0; i < statisticsTabs.Count; i++)
+            statisticsTabs[i].Foreground = i == index ? Ui.Text : Ui.Muted;
+        if (index == 1)
+            timeline?.Refresh(true);
+        if (moved && IsLoaded)
+            ((ScrollViewer)pages[2]).ScrollToTop();
+    }
+
+    void OpenTargetTimeline(string target)
+    {
+        SelectStatisticsView(1);
+        timeline!.SelectTarget(target);
+        // Remove focus from the hidden list so BringIntoView cannot scroll back to it.
+        statisticsTabs[1].Focus();
     }
 
     void BuildConnection(StackPanel page)
@@ -759,8 +860,9 @@ public sealed class SettingsWindow : Window
                 element.ToolTip = Strings.T(name);
         }
         if (rows.View is GridView columns)
-            for (int i = 0; i < columns.Columns.Count; i++)
-                columns.Columns[i].Header = Strings.T(i == 0 ? "目标" : i == 1 ? "下载" : "上传");
+            foreach (var column in columns.Columns)
+                if (column.Header is TextBlock header && header.Tag is string key)
+                    header.Text = Strings.T(key);
         SelectPage(currentPage);
         Refresh();
         RefreshRows();
@@ -860,10 +962,60 @@ public sealed class SettingsWindow : Window
         SelectPage(0);
         await System.Threading.Tasks.Task.Delay(260);
     }
+    public async System.Threading.Tasks.Task VerifyStatisticsForTest(string output)
+    {
+        SelectPage(2);
+        SelectStatisticsView(0, false);
+        await System.Threading.Tasks.Task.Delay(260);
+        if (rankingView.Visibility != Visibility.Visible || timelineView.Visibility != Visibility.Collapsed)
+            throw new InvalidOperationException("Usage and timeline views overlap.");
+        if (rows.Items.Count == 0)
+            throw new InvalidOperationException("Usage examples missing.");
+        var clickedRow = (ListViewItem)rows.ItemContainerGenerator.ContainerFromIndex(0)!;
+        rows.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+        {
+            RoutedEvent = PreviewMouseLeftButtonUpEvent,
+            Source = clickedRow
+        });
+        await System.Threading.Tasks.Task.Delay(220);
+        if (rankingView.Visibility != Visibility.Collapsed || timelineView.Visibility != Visibility.Visible || timeline!.SelectedTargetForTest != ((UsageRow)rows.Items[0]).Target)
+            throw new InvalidOperationException("Target drill-in failed.");
+        SelectStatisticsView(0, false);
+        rows.SelectedIndex = 0;
+        RefreshRows();
+        if (rows.SelectedItem is not UsageRow selectedRow)
+            throw new InvalidOperationException("Refresh lost keyboard selection.");
+        rows.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(rows), Environment.TickCount, Key.Enter)
+        {
+            RoutedEvent = Keyboard.KeyDownEvent
+        });
+        if (statisticsView != 1 || timeline!.SelectedTargetForTest != selectedRow.Target)
+            throw new InvalidOperationException("Keyboard target drill-in failed.");
+        await timeline.VerifyWheelForTest(output);
+        for (int i = 0; i < 100; i++)
+            SelectStatisticsView(i % 2, false);
+        SelectStatisticsView(0, false);
+        await System.Threading.Tasks.Task.Delay(80);
+        if (rankingView.Visibility != Visibility.Visible || timelineView.Visibility != Visibility.Collapsed || statisticsPosition.HasAnimatedProperties)
+            throw new InvalidOperationException("Repeated statistics switching retained transitions.");
+        var card = (Border)((Grid)rows.Parent).Parent;
+        if (card.Clip is not RectangleGeometry clip || clip.RadiusX != 16 || clip.Rect.Size != card.RenderSize || card.Padding.Left < 6)
+            throw new InvalidOperationException("Table card does not clip and inset its content.");
+        var container = (ListViewItem)rows.ItemContainerGenerator.ContainerFromIndex(0)!;
+        container.ApplyTemplate();
+        if (container.Template.FindName("Row", container) is not Border row || row.CornerRadius.TopLeft < 8 || row.Margin.Left < 4)
+            throw new InvalidOperationException("Table row highlight is not rounded.");
+        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "statistics-ui-test.txt"), "PASS: usage view first, single visible view, routed mouse/Enter target drill-in, keyboard selection survives refresh, 100 switches without retained clocks, clipped/inset card and rounded rows\n");
+    }
+
     public void OpenAppearanceForTest() => appearance?.OpenForTest();
     public void CloseAppearanceForTest() => appearance?.CloseForTest();
     public UIElement? AppearancePreviewForTest => appearance?.PreviewForTest;
-    public void ShowTimeline() => timeline?.BringIntoView();
+    public void ShowTimeline()
+    {
+        SelectStatisticsView(1, false);
+        ((ScrollViewer)pages[2]).ScrollToTop();
+    }
     public void VerifyTimelineForTest(string output) => timeline?.VerifyForTest(output);
     public void PreviewTimelineForTest() => timeline?.PreviewForTest();
     public void PreviewLowTrafficForTest(bool detail) => timeline?.PreviewLowTrafficForTest(detail);
@@ -1054,15 +1206,15 @@ public sealed class SettingsWindow : Window
                 2 => data.OrderByDescending(row => row.Upload),
                 _ => data
             };
-            rows.ItemsSource = ordered.Select(row => new
-            {
-                row.Target,
-                Down = Display.Bytes(row.Download),
-                Up = Display.Bytes(row.Upload)
-            }).ToList();
+            string? selected = (rows.SelectedItem as UsageRow)?.Target;
+            var entries = ordered.Select(row => new UsageRow(row.Target, Display.Bytes(row.Download), Display.Bytes(row.Upload))).ToList();
+            rows.ItemsSource = entries;
+            rows.SelectedItem = entries.FirstOrDefault(row => row.Target == selected);
+            rows.Height = Math.Clamp(entries.Count * 44 + 46, 140, 280);
             emptyRows.Visibility = rows.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             timeline?.UpdateTargets(range.SelectedIndex == 1 ? data : app.Store.Query(DateTime.Today.AddDays(-6), DateTime.Today));
-            timeline?.Refresh(true);
+            if (statisticsView == 1)
+                timeline?.Refresh(true);
             lastStats = DateTime.UtcNow;
         }
         catch

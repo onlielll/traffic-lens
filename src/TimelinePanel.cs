@@ -143,7 +143,7 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         plot.PreviewMouseMove += (_, e) => { long now = Environment.TickCount64; if (now - hoverAt < 33) return; hoverAt = now; Hover(e.GetPosition(plot)); };
         plot.MouseLeave += (_, _) => HidePointer();
         plot.SizeChanged += (_, _) => { HidePointer(); model.InvalidatePlot(false); };
-        plot.PreviewMouseWheel += (_, e) => { if (data.Count == 0) return; var p = e.GetPosition(plot); double ratio = (p.X - model.PlotArea.Left) / Math.Max(1, model.PlotArea.Width); Zoom(e.Delta > 0 ? 0.65 : 1 / 0.65, Math.Clamp(ratio, 0, 1)); e.Handled = true; };
+        plot.PreviewMouseWheel += (_, e) => e.Handled = HandleWheel(e.Delta, Keyboard.Modifiers, e.GetPosition(plot));
         plot.PreviewMouseLeftButtonDown += (_, e) => { var p = e.GetPosition(plot); var area = model.PlotArea; if (p.X >= area.Left && p.X <= area.Right && p.Y >= area.Bottom - 5 && p.Y <= area.Bottom + 34) { Pick((long)Math.Round(FromAxis(x.InverseTransform(p.X)))); e.Handled = true; } };
         pan.ValueChanged += (_, _) => { if (syncing || full) return; long span = viewLast - viewFirst; viewFirst = (long)Math.Round(pan.Value); viewLast = viewFirst + span; Refresh(true); };
         period.SelectionChanged += (_, _) => { if (syncing) return; int index = Math.Max(0, period.SelectedIndex); app.Config.TimelineRange = index < 2 ? 0 : index - 1; if (index < 2) app.Config.TimelineRecentMinutes = index == 0 ? 10 : 60; ResetView(); changed(); Refresh(true); };
@@ -154,6 +154,16 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         SyncChoices();
         ApplyTheme();
     }
+    // Ordinary wheel events bubble to the page. Zoom is an explicit Ctrl+wheel gesture.
+    bool HandleWheel(int delta, ModifierKeys modifiers, Point position)
+    {
+        if ((modifiers & ModifierKeys.Control) == 0 || data.Count == 0)
+            return false;
+        double ratio = (position.X - model.PlotArea.Left) / Math.Max(1, model.PlotArea.Width);
+        Zoom(delta > 0 ? 0.65 : 1 / 0.65, Math.Clamp(ratio, 0, 1));
+        return true;
+    }
+
     void CommitTarget() => SelectTarget(target.Text == Strings.T("全部代理流量") ? "" : target.Text.Trim().TrimEnd('.').ToLowerInvariant());
     void ResetView()
     {
@@ -264,7 +274,7 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         y.StringFormat = "0.##";
         empty.Text = Strings.T(app.Config.RecordTimeline ? "等待时间记录\n采样保存后，曲线会出现在这里。" : "时间记录未开启\n开启后可查看流量随时间的变化。");
         empty.Visibility = data.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        note.Text = Strings.T(app.Config.RecordTimeline ? "逐秒记录 · 保留最近 24 小时" : "记录已暂停 · 已有历史仍可查看") + " · " + Strings.Format("显示粒度：{0} 秒", step) + "\n" + Strings.T("滚轮缩放 · 下方滑块平移 · 点击时间轴两处查看区间总量");
+        note.Text = Strings.T(app.Config.RecordTimeline ? "逐秒记录 · 保留最近 24 小时" : "记录已暂停 · 已有历史仍可查看") + " · " + Strings.Format("显示粒度：{0} 秒", step) + "\n" + Strings.T("Ctrl＋滚轮缩放 · 下方滑块平移 · 点击时间轴两处查看区间总量");
         if (data.Any(p => p.Resolution == 60))
             note.Text += "\n" + Strings.T("旧记录为分钟精度，放大后仍按原精度展示。");
         syncing = true;
@@ -286,7 +296,7 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         if (fullLast <= fullFirst)
             return;
         hoverPoint = null;
-        long oldSpan = viewLast - viewFirst, span = Math.Clamp((long)Math.Round(oldSpan * factor), 10, fullLast - fullFirst);
+        long oldSpan = viewLast - viewFirst, span = Math.Clamp((long)Math.Round(oldSpan * factor), Math.Min(10, fullLast - fullFirst), fullLast - fullFirst);
         full = span == fullLast - fullFirst;
         viewFirst = Math.Clamp((long)Math.Round(viewFirst + oldSpan * ratio - span * ratio), fullFirst, fullLast - span);
         viewLast = viewFirst + span;
@@ -468,6 +478,40 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         Refresh(true);
         System.IO.File.WriteAllText(System.IO.Path.Combine(output, "timeline-ui-test.txt"), "PASS: local timestamps, editable/filter targets, zoom and interval preserved across 100 refreshes and theme changes, bounded points/annotations\n");
     }
+    public async System.Threading.Tasks.Task VerifyWheelForTest(string output)
+    {
+        SelectTarget("");
+        full = true;
+        Refresh(true);
+        long before = viewLast - viewFirst;
+        var point = new Point(model.PlotArea.Left + model.PlotArea.Width / 2, model.PlotArea.Top + 30);
+        if (HandleWheel(120, ModifierKeys.None, point) || viewLast - viewFirst != before)
+            throw new InvalidOperationException("Ordinary wheel changed the chart range.");
+        if (!HandleWheel(120, ModifierKeys.Control, point) || viewLast - viewFirst >= before)
+            throw new InvalidOperationException("Ctrl+wheel did not zoom the chart.");
+        var element = System.Windows.Media.VisualTreeHelper.GetParent(plot);
+        while (element != null && element is not ScrollViewer)
+            element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+        var scroll = (ScrollViewer)element!;
+        scroll.ScrollToTop();
+        await System.Threading.Tasks.Task.Delay(60);
+        before = viewLast - viewFirst;
+        plot.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
+        {
+            RoutedEvent = Mouse.MouseWheelEvent,
+            Source = plot
+        });
+        await System.Threading.Tasks.Task.Delay(60);
+        if (scroll.ScrollableHeight > 0 && scroll.VerticalOffset == 0)
+            throw new InvalidOperationException("PlotView swallowed normal page scrolling.");
+        if (viewLast - viewFirst != before)
+            throw new InvalidOperationException("Bubbling wheel zoomed the chart.");
+        full = true;
+        Refresh(true);
+        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "chart-wheel-test.txt"), "PASS: normal wheel scrolls the containing page without zoom; Ctrl+wheel zooms; plot resources reused\n");
+    }
+
+    public string SelectedTargetForTest => selectedTarget;
     public void PreviewForTest()
     {
         full = true;
