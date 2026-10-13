@@ -6,6 +6,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Security.Cryptography;
+using System.Threading;
 
 namespace ProxyTrafficFloat;
 
@@ -61,11 +63,38 @@ public sealed class Settings
         set => ProtectedSecret = WindowsCrypto.Protect(value);
     }
 
-    public static Settings Load(string path)
+    [JsonIgnore]
+    public DateTime ModifiedUtc { get; private set; }
+    [JsonIgnore]
+    public bool Recovered { get; private set; }
+    public Settings Copy() => (Settings)MemberwiseClone();
+
+    // Both readers and read-modify-write operations cooperate on the same per-file mutex.
+    static T WithFileLock<T>(string path, Func<T> action)
+    {
+        string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(path).ToUpperInvariant())))[..16];
+        using var mutex = new Mutex(false, @"Local\TrafficLens.Settings." + key);
+        try { mutex.WaitOne(); }
+        catch (AbandonedMutexException) { } // The next owner can recover the last atomic file.
+        try { return action(); }
+        finally { mutex.ReleaseMutex(); }
+    }
+
+    public static Settings Load(string path) => WithFileLock(path, () => Read(path));
+
+    public static Settings Update(string path, Action<Settings> change) => WithFileLock(path, () =>
+    {
+        var latest = Read(path);
+        change(latest);
+        latest.Write(path);
+        return latest;
+    });
+
+    static Settings Read(string path)
     {
         try
         {
-            var settings = JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJson.Default.Settings) ?? new();
+            var settings = JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJson.Default.Settings) ?? throw new JsonException("Expected settings object.");
             settings.Language = Strings.NormalizeLanguage(settings.Language);
             settings.ColorMode = AppTheme.Normalize(settings.ColorMode);
             // Settings can be edited outside the app. Bound values before they reach window geometry or timers.
@@ -83,24 +112,32 @@ public sealed class Settings
             settings.AnchorY = Clamp(settings.AnchorY, 0, 1, 0.1);
             settings.MiniAnchorX = Clamp(settings.MiniAnchorX, 0, 1, 1);
             settings.MiniAnchorY = Clamp(settings.MiniAnchorY, 0, 1, 1);
+            settings.ModifiedUtc = File.GetLastWriteTimeUtc(path);
             return settings;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (FileNotFoundException) { return new(); }
+        catch (DirectoryNotFoundException) { return new(); }
+        catch (JsonException error)
         {
-            return new();
+            File.Move(path, path + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff"));
+            Diagnostics.Write(Path.GetDirectoryName(path)!, "settings-corrupt", error);
+            return new() { Recovered = true };
         }
     }
 
     static double Clamp(double value, double minimum, double maximum, double fallback) =>
         Math.Clamp(double.IsFinite(value) ? value : fallback, minimum, maximum);
 
-    public void Save(string path)
+    // Complete snapshots use Save; concurrent field edits use Update.
+    public void Save(string path) => WithFileLock(path, () => { Write(path); return this; });
+    void Write(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         // The resident monitor and settings host can save at the same time.
         string temporary = path + "." + Environment.ProcessId + ".tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(this, SettingsJson.Default.Settings));
         File.Move(temporary, path, true);
+        ModifiedUtc = File.GetLastWriteTimeUtc(path);
     }
 }
 

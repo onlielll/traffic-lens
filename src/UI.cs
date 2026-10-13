@@ -505,7 +505,7 @@ public sealed class SettingsWindow : Window
             if (syncing)
                 return;
             app.Config.SingleConnection = grouping.SelectedIndex == 1;
-            app.Recalculate();
+
             Changed();
         };
         layout.Children.Add(grouping);
@@ -731,6 +731,16 @@ public sealed class SettingsWindow : Window
 
         var state = Section("本地连接");
         state.Children.Add(connection);
+        if (app.Config.Recovered || System.IO.Directory.EnumerateFiles(app.DataDirectory, "settings.json.corrupt-*").Any())
+            state.Children.Add(Ui.Label("损坏配置备份保存在数据目录。", 11, Ui.Muted));
+        var logs = Ui.Button("打开日志目录", (_, _) =>
+        {
+            string folder = System.IO.Path.Combine(app.DataDirectory, "logs");
+            System.IO.Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+        });
+        logs.HorizontalAlignment = HorizontalAlignment.Left;
+        state.Children.Add(logs);
         state.Children.Add(Ui.Label("内核在线表示接口可读取。速率采用最近三秒平均，停止传输后会短暂保留；关闭系统代理和 TUN 不会清空今日累计。", 11, Ui.Muted));
         state.Children.Add(Ui.Label("自动识别当前运行的 Mihomo 接口，通常无需手动配置。", 11, Ui.Muted));
         page.Children.Add(Ui.Card(state));
@@ -1042,15 +1052,16 @@ public sealed class SettingsWindow : Window
     {
         if (!pendingSave)
             return;
-        pendingSave = false;
         try
         {
             app.Save();
+            pendingSave = false;
         }
         catch (Exception ex)
         {
+            Diagnostics.Write(app.DataDirectory, "settings-save", ex);
             if (!app.IsStopping)
-                MessageBox.Show(this, Strings.T(ex.Message), Strings.T("设置保存失败"));
+                MessageBox.Show(this, Strings.T("设置未保存，请稍后重试。"), Strings.T("设置保存失败"));
         }
     }
 
@@ -1217,9 +1228,10 @@ public sealed class SettingsWindow : Window
                 timeline?.Refresh(true);
             lastStats = DateTime.UtcNow;
         }
-        catch
+        catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)
         {
             total.Text = Strings.T("记录读取失败");
+            Diagnostics.Write(app.DataDirectory, "statistics-read", error);
         }
     }
 

@@ -47,6 +47,8 @@ Traffic Lens 在 Windows 桌面显示代理上下行速率、当前下载与上�
 
 运行目标为 Windows 10 1607+ 和 Windows 11。x64、x86 已在 Windows 11 上验证，ARM64 尚待设备实测。详细结果见 [验证报告](docs/VALIDATION.md)。
 
+安装包目前未进行代码签名。可在 PowerShell 中用 `Get-FileHash <下载的文件> -Algorithm SHA256`，与同架构的 `SHA256SUMS.txt` 核对。
+
 ## 快速开始
 
 1. 启动 Mihomo 或 Clash Verge。
@@ -69,7 +71,7 @@ Traffic Lens 在 Windows 桌面显示代理上下行速率、当前下载与上�
 
 累计量仅覆盖监测期间观测到的增量，可能遗漏短连接及断线期间的流量，适合定位流量来源。进程信息取决于 Mihomo；HTTPS 连接无法识别具体下载文件。
 
-设置与统计存储在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥由 Windows DPAPI 加密。软件不上传统计、不修改分流规则。卸载后保留本机设置与记录。
+设置与统计存储在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥由 Windows DPAPI 加密。软件不上传统计、不修改分流规则。卸载后保留本机设置与记录。损坏设置会保留为 settings.json.corrupt-* 备份。发生异常时可在“连接与启动”打开日志目录；日志只记录时间、错误类型和代码，不记录域名、接口地址或密钥。
 
 ## 开发
 

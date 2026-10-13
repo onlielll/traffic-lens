@@ -32,6 +32,15 @@ public static class Strings
 
     static readonly Dictionary<string, string> English = new(StringComparer.Ordinal)
     {
+        ["设置窗口发生错误，请重新打开。"] = "Settings encountered an error. Please reopen it.",
+        ["无法读取本机状态，请查看日志。"] = "Cannot read local status. See the diagnostic logs.",
+        ["监控启动失败，请查看日志。"] = "Monitoring could not start. See the diagnostic logs.",
+        ["损坏配置已备份，已恢复默认设置。"] = "Damaged settings were backed up. Defaults have been restored.",
+        ["损坏配置备份保存在数据目录。"] = "A backup of damaged settings is stored in the data folder.",
+        ["程序未能启动，请查看日志。"] = "The application could not start. See the diagnostic logs.",
+        ["设置读取失败，请查看日志。"] = "Cannot read settings. See the diagnostic logs.",
+        ["打开日志目录"] = "Open logs",
+        ["设置未保存，请稍后重试。"] = "Settings were not saved. Please retry.",
         ["逐秒保存 · 最近 24 小时"] = "One-second history · Last 24 hours",
         ["近 10 分钟"] = "Last 10 minutes",
         ["速率峰值"] = "Peak speed",

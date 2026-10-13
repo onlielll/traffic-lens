@@ -47,6 +47,8 @@ Installers include the runtime and install for the current user without administ
 
 The distribution targets Windows 10 1607+ and Windows 11. x64 and x86 have been tested on Windows 11; ARM64 hardware testing is pending. See the [validation report](docs/VALIDATION.md).
 
+Packages are currently unsigned. To verify a download, run `Get-FileHash <downloaded-file> -Algorithm SHA256` in PowerShell and compare it with the matching `SHA256SUMS.txt`.
+
 ## Quick start
 
 1. Start Mihomo or Clash Verge.
@@ -69,7 +71,7 @@ Core online means the API is reachable. After system proxy and TUN are turned of
 
 Observed totals cover increments seen while monitoring. Short connections and disconnected periods may be missed. Process information depends on Mihomo, and HTTPS connections do not identify the downloaded file.
 
-Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change routing rules. Uninstalling preserves local settings and records.
+Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change routing rules. Uninstalling preserves local settings and records. Damaged settings are preserved as settings.json.corrupt-* backups. Open diagnostic logs from Connection; they contain timestamps, error types and codes, without domains, API addresses or secrets.
 
 ## Development
 

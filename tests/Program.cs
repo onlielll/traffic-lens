@@ -17,6 +17,7 @@ static class Test
     static string Json(params (string Id, string[] Chains, string Host, long D, long U)[] items) => JsonSerializer.Serialize(new { connections = items.Select(i => new { id = i.Id, chains = i.Chains, metadata = new { host = i.Host, destinationIP = "1.2.3.4", process = "" }, download = i.D, upload = i.U }) });
     public static async Task Main(string[] args)
     {
+        if (args.Length > 1 && args[0] == "--settings-worker") { ReliabilityTests.Worker(args[1]); return; }
         if(args.Contains("--timeline-benchmark")) { TimelineBenchmark.Run(); return; }
         var types = new Dictionary<string, string> { { "proxy", "Shadowsocks" }, { "GROUP", "Selector" }, { "customDirect", "Direct" }, { "block", "Reject" } };
         var parsed = ConnectionParser.Parse(Json(("p", new[] { "proxy", "GROUP" }, "a.test", 100, 5), ("d", new[] { "DIRECT", "GROUP" }, "direct.test", 9999, 9999), ("x", new[] { "customDirect", "GROUP" }, "direct2.test", 500, 500), ("u", new[] { "GROUP" }, "unknown.test", 100, 100), ("b", new[] { "block" }, "blocked.test", 0, 0), ("ip", new[] { "proxy" }, "", 100, 100)), types);
@@ -69,11 +70,12 @@ static class Test
         finally { foreach (var suffix in new[] { "", "-wal", "-shm" }) if (File.Exists(path + suffix)) File.Delete(path + suffix); }
         var secret = "local-test-secret"; var cipher = WindowsCrypto.Protect(secret); True(cipher != secret, "secret encrypted"); True(WindowsCrypto.Unprotect(cipher) == secret, "DPAPI roundtrip");
         using (MihomoClient.CreateClient("127.0.0.1:9090", "")) { }
-        ;
+
         bool blocked = false; try { using var _ = MihomoClient.CreateClient("http://example.com", ""); } catch (ArgumentException) { blocked = true; }
         True(blocked, "remote endpoint blocked");
         var settingsPath = Path.Combine(Path.GetTempPath(), "ProxyTrafficFloat-settings-" + Guid.NewGuid() + ".json");
         try { var conf = new Settings { Visible = false, SingleConnection = true, Opacity = 0.6, Endpoint = "http://127.0.0.1:9090", Secret = secret }; conf.Save(settingsPath); var loaded = Settings.Load(settingsPath); True(!loaded.Visible && loaded.SingleConnection && loaded.Opacity == 0.6, "settings restart persistence"); True(loaded.Secret == secret, "saved encrypted secret decrypts"); True(!File.ReadAllText(settingsPath).Contains(secret), "secret not stored plaintext"); File.WriteAllText(settingsPath, "broken"); True(Settings.Load(settingsPath).ShowSpeed, "corrupt settings safe defaults"); } finally { if (File.Exists(settingsPath)) File.Delete(settingsPath); }
+        await ReliabilityTests.Run();
         PresentationTests.Run();
         StorageTests.Run();
         TimelineTests.Run();

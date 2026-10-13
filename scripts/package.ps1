@@ -29,7 +29,14 @@ foreach ($taskDocument in @('README.md', 'README.en.md', 'CHANGELOG.md', 'CONTRI
         Copy-Item -LiteralPath $taskDocumentPath -Destination $taskPublished -Force
     }
 }
-Copy-Item -LiteralPath (Join-Path $taskRoot 'docs') -Destination $taskPublished -Recurse -Force
+$taskDocs = Join-Path $taskPublished 'docs'
+New-Item -ItemType Directory -Force -Path $taskDocs | Out-Null
+Copy-Item -LiteralPath (Join-Path $taskRoot 'docs\VALIDATION.md') -Destination $taskDocs -Force
+Copy-Item -LiteralPath (Join-Path $taskRoot 'docs\images') -Destination $taskDocs -Recurse -Force
+foreach ($taskInternalDocument in @('FIRST-GITHUB-UPLOAD.md', 'LICENSE-OPTIONS.md', 'REPOSITORY-INTRO.md')) {
+    $taskStaleDocument = Join-Path $taskDocs $taskInternalDocument
+    if (Test-Path -LiteralPath $taskStaleDocument) { Remove-Item -LiteralPath $taskStaleDocument -Force }
+}
 Compress-Archive -Path (Join-Path $taskPublished '*') -DestinationPath (Join-Path $taskOutput "$taskName-portable.zip") -CompressionLevel Optimal -Force
 $taskPackages = @("$taskName-portable.zip")
 

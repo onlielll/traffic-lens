@@ -37,7 +37,12 @@ public static class Program
                 File.WriteAllText(Path.Combine(args[1], "settings-error.txt"), e.Exception.ToString());
                 app.Shutdown(1);
             }
-            else MessageBox.Show(Strings.T("设置未能完成：") + Strings.T(e.Exception.Message), "Traffic Lens");
+            else
+            {
+                Diagnostics.Write(app.DataDirectory, "settings-unhandled", e.Exception);
+                MessageBox.Show(Strings.T("设置窗口发生错误，请重新打开。"), "Traffic Lens");
+                app.Shutdown(1);
+            }
             e.Handled = true;
         };
         try { app.Run(); }
@@ -51,11 +56,11 @@ public sealed class MonitorApp : Application
     public EventWaitHandle? Activation { get; init; }
     public Settings Config { get; private set; } = new();
     public TrafficStore Store { get; private set; } = null!;
-    public Dictionary<string, Amount> Today { get; private set; } = new();
+
     public string Status { get; private set; } = "正在读取本机监控状态…";
     public string Source { get; private set; } = "本机接口";
     public bool Connected { get; private set; }
-    public bool IsSettingsHost => true;
+    public string DataDirectory => dataRoot;
     public bool IsStopping { get; private set; }
     public event Action? Updated;
 
@@ -82,9 +87,9 @@ public sealed class MonitorApp : Application
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         Config = Settings.Load(ConfigPath);
         Strings.UseLanguage(Config.Language);
-        baseline = Settings.Load(ConfigPath);
+        baseline = Config.Copy();
         Store = new TrafficStore(Path.Combine(dataRoot, "traffic.sqlite"));
-        Today = Store.Today();
+
         OpenSettings();
         MainWindow = settings;
         refresh.Tick += (_, _) => ReadStatus();
@@ -104,49 +109,76 @@ public sealed class MonitorApp : Application
         string path = Path.Combine(dataRoot, "live.json");
         try
         {
-            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            using var json = JsonDocument.Parse(reader.ReadToEnd());
             var root = json.RootElement;
-            Connected = root.GetProperty("connected").GetBoolean();
-            Status = root.GetProperty("status").GetString() ?? "未连接";
-            Source = root.GetProperty("source").GetString() ?? "本机接口";
-            if (DateTimeOffset.UtcNow - root.GetProperty("at").GetDateTimeOffset() > TimeSpan.FromSeconds(30)) { Connected = false; Status = "常驻监控未运行"; }
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("connected", out var online) || online.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
+                !root.TryGetProperty("at", out var at) || at.ValueKind != JsonValueKind.String || !at.TryGetDateTimeOffset(out var timestamp))
+                throw new JsonException("Invalid local status.");
+            Connected = online.GetBoolean();
+            Status = ConnectionParser.GetString(root, "status");
+            Source = ConnectionParser.GetString(root, "source");
+            if (DateTimeOffset.UtcNow - timestamp > TimeSpan.FromSeconds(30)) { Connected = false; Status = "常驻监控未运行"; }
+
         }
-        catch (IOException) { Connected = false; Status = "常驻监控未运行"; }
-        catch (JsonException) { Connected = false; Status = "正在读取监控状态…"; }
-        DateTime time = File.Exists(ConfigPath) ? File.GetLastWriteTimeUtc(ConfigPath) : DateTime.MinValue;
-        if (time != configTime)
+        catch (FileNotFoundException) { Connected = false; Status = "常驻监控未运行"; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         {
-            MergeWithDisk();
-            baseline = Settings.Load(ConfigPath);
-            configTime = time;
+            Connected = false;
+            Status = "无法读取本机状态，请查看日志。";
+            Diagnostics.Write(dataRoot, "settings-status", error);
         }
-        Today = Store.Today();
+        try
+        {
+            DateTime time = File.Exists(ConfigPath) ? File.GetLastWriteTimeUtc(ConfigPath) : DateTime.MinValue;
+            if (time != configTime)
+            {
+                var latest = Settings.Load(ConfigPath);
+                var saved = latest.Copy();
+                MergeWithDisk(latest);
+                Config = latest;
+                baseline = saved;
+                configTime = saved.ModifiedUtc;
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Status = "设置读取失败，请查看日志。";
+            Diagnostics.Write(dataRoot, "settings-read", error);
+        }
         Updated?.Invoke();
     }
 
-    void MergeWithDisk()
+    static readonly PropertyInfo[] SavedProperties = typeof(Settings).GetProperties()
+        .Where(p => p.SetMethod?.IsPublic == true && p.Name != nameof(Settings.Secret)).ToArray();
+
+    void MergeWithDisk(Settings latest)
     {
-        var latest = Settings.Load(ConfigPath);
         // Preserve pending edits while accepting geometry written by the resident window.
-        foreach (var property in typeof(Settings).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        foreach (var property in SavedProperties)
         {
-            if (property.Name == nameof(Settings.Secret)) continue;
+
             if (!Equals(property.GetValue(Config), property.GetValue(baseline)))
                 property.SetValue(latest, property.GetValue(Config));
         }
-        Config = latest;
     }
 
     public void Save()
     {
-        MergeWithDisk();
-        Config.Save(ConfigPath);
-        baseline = Settings.Load(ConfigPath);
-        configTime = File.GetLastWriteTimeUtc(ConfigPath);
+        Config = Settings.Update(ConfigPath, MergeWithDisk);
+        baseline = Config.Copy();
+        configTime = Config.ModifiedUtc;
     }
     public void Apply() => Updated?.Invoke();
-    public void Recalculate() { }
-    public void Reconnect() { Status = "设置已保存，常驻监控正在重新连接"; Updated?.Invoke(); }
+
+    public void Reconnect()
+    {
+        File.WriteAllText(Path.Combine(dataRoot, "reconnect.signal"), "");
+        Status = "设置已保存，常驻监控正在重新连接";
+        Updated?.Invoke();
+    }
     public void OpenSettings()
     {
         if (settings == null)
@@ -163,7 +195,7 @@ public sealed class MonitorApp : Application
         // One owner clears both the database and the resident's cached totals on the next tick.
         File.WriteAllText(Path.Combine(dataRoot, "clear.signal"), "clear");
         Store.Clear();
-        Today.Clear();
+
         Updated?.Invoke();
     }
     public void SetAutoStart(bool enabled)

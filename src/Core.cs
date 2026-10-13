@@ -25,8 +25,9 @@ public static class ConnectionParser
     {
         using var document = JsonDocument.Parse(json);
         var types = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var proxy in document.RootElement.GetProperty("proxies").EnumerateObject())
-            types.Add(proxy.Name, GetString(proxy.Value, "type"));
+        var proxies = Required(document.RootElement, "proxies", JsonValueKind.Object);
+        foreach (var proxy in proxies.EnumerateObject())
+            types[proxy.Name] = GetString(proxy.Value, "type");
         return types;
     }
 
@@ -36,10 +37,10 @@ public static class ConnectionParser
         var connections = new List<Connection>();
         int unknown = 0, direct = 0;
 
-        foreach (var item in document.RootElement.GetProperty("connections").EnumerateArray())
+        foreach (var item in Required(document.RootElement, "connections", JsonValueKind.Array).EnumerateArray())
         {
             // Mihomo reports the final outbound first, followed by its selector groups.
-            string node = item.TryGetProperty("chains", out var chains) && chains.ValueKind == JsonValueKind.Array &&
+            string node = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("chains", out var chains) && chains.ValueKind == JsonValueKind.Array &&
                 chains.GetArrayLength() > 0 && chains[0].ValueKind == JsonValueKind.String ? chains[0].GetString() ?? "" : "";
             types.TryGetValue(node, out var type);
             if (node.Equals("DIRECT", StringComparison.OrdinalIgnoreCase) ||
@@ -54,13 +55,14 @@ public static class ConnectionParser
                 continue;
             }
             string id = GetString(item, "id");
-            if (id.Length == 0)
+            if (id.Length == 0 || !item.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object ||
+                !Counter(item, "download", out long download) || !Counter(item, "upload", out long upload))
             {
                 unknown++;
                 continue;
             }
 
-            var metadata = item.GetProperty("metadata");
+
             string host = GetString(metadata, "host");
             if (string.IsNullOrWhiteSpace(host)) host = GetString(metadata, "sniffHost");
             if (string.IsNullOrWhiteSpace(host)) host = GetString(metadata, "destinationIP");
@@ -69,17 +71,24 @@ public static class ConnectionParser
             string process = GetString(metadata, "process");
             if (string.IsNullOrWhiteSpace(process)) process = Path.GetFileName(GetString(metadata, "processPath"));
             connections.Add(new(id, host, string.IsNullOrWhiteSpace(process) ? "未知" : process, node,
-                GetLong(item, "download"), GetLong(item, "upload")));
+                download, upload));
         }
         return new(connections, unknown, direct);
     }
 
     public static string GetString(JsonElement element, string name) =>
-        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
 
-    static long GetLong(JsonElement element, string name) =>
-        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number)
-            ? Math.Max(0, number) : 0;
+    static JsonElement Required(JsonElement root, string name, JsonValueKind kind) =>
+        root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out var value) && value.ValueKind == kind
+            ? value : throw new JsonException("Invalid Mihomo response.");
+
+    static bool Counter(JsonElement item, string name, out long number)
+    {
+        number = 0;
+        return item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+            value.TryGetInt64(out number) && number >= 0;
+    }
 }
 
 public sealed class TrafficEngine
@@ -235,7 +244,7 @@ public sealed class TrafficEngine
     }
 
     static bool Wins(double speed, string key, double best, string? bestKey) =>
-        speed > 0 && (speed > best || speed == best && string.Compare(key, bestKey, StringComparison.CurrentCulture) < 0);
+        speed > 0 && (speed > best || speed == best && string.Compare(key, bestKey, StringComparison.Ordinal) < 0);
 }
 
 public static class Display

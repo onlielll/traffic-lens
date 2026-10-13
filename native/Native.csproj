@@ -17,6 +17,8 @@
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
     <RuntimeHostConfigurationOption Include="System.GC.Server" Value="false" />
     <Compile Include="..\src\Core.cs" Link="Core.cs" />
+    <Compile Include="..\src\Diagnostics.cs" Link="Diagnostics.cs" />
+    <Compile Include="..\src\ResourceTrend.cs" Link="ResourceTrend.cs" />
     <Compile Include="..\src\Timeline.cs" Link="Timeline.cs" />
     <Compile Include="..\src\AppTheme.cs" Link="AppTheme.cs" />
     <Compile Include="..\src\Storage.cs" Link="Storage.cs" />

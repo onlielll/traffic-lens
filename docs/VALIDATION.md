@@ -1,5 +1,17 @@
 # 验证报告 · Validation
 
+## 2.1.0 稳定性修复 · 2026-10-13
+
+- x64、x86 均通过原有核心、展示、时间线、存储、传输及中英文检查。新增用例验证畸形记录隔离、无效计数跳过、配置损坏备份、读取受限不恢复默认值，以及两个实际进程共 200 次配置更新无丢失。
+- 隔离复现确认：一条错误连接不重置健康连接基线；损坏状态连续刷新 100 次不抛异常；数据库初始化失败显示明确失败状态；原生悬浮窗移动时解锁热区同步。
+- x64、x86 原生界面各通过 30 项检查，包含模拟 TaskbarCreated 后重新注册托盘；各进行 10,000 次绘制、100 次模式/尺寸及主题切换，GDI 为 27→29，首次主题资源预热后保持稳定。独立设置页关闭后退出。
+- 模拟本机接口失败验证逐步退避、状态心跳和主动重连。主动重连在约 0.95 秒内恢复请求，监测不发起外网请求。
+- 修复版通过当前 Mihomo 本地接口连续运行 600 秒：成功 600 次、失败 0 次，GDI 保持 27；预热后私有字节均值增长约 9.99 MiB，低于本轮增长检查阈值。趋势检查只用于显式持续运行测试，使用固定大小采样窗口；不用于承诺绝无内存泄漏。
+- 诊断记录仅包含时间、操作、异常类型和错误码；每个程序最多保留两个约 256 KiB 文件，不写入密钥、URL 或连接明细。日志轮换、连续重复错误限频和隐私用例通过。
+
+本轮实机仍为 Windows 11 x64 和其 x86 兼容环境；ARM64 完成构建，尚待设备验证。十分钟复查不替代更长时间实机观察。
+
+Both x64 and x86 pass regression and reliability tests, including concurrent settings updates, malformed-record isolation, tray restoration and bounded diagnostics. The fixed monitor completes a ten-minute local API run with 600 successful reads and no failures. Longer-duration and additional hardware testing remain necessary.
 ## 2.1.0 时间线与主题 · 2026-10-12
 
 - x64 与 x86 通过 49 项核心、192 项展示逻辑及 50 项时间线断言，覆盖秒级/分钟聚合、区间总量、目标筛选、24 小时滚动删除、旧分钟精度、保存失败回滚与恢复、断线、休眠和清空。
