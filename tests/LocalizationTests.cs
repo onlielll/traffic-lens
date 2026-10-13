@@ -34,6 +34,12 @@ public static class LocalizationTests
             if (Settings.Load(path).Language != "auto") throw new Exception("Invalid saved language was not normalized");
             File.WriteAllText(path, "{}");
             if (Settings.Load(path).Language != "auto") throw new Exception("Old settings did not keep automatic language");
+            if(Settings.Load(path).ColorMode!="system") throw new Exception("Old settings must follow the system theme.");
+            new Settings { ColorMode="dark" }.Save(path);
+            if(Settings.Load(path).ColorMode!="dark") throw new Exception("Theme preference was not saved.");
+            AppTheme.Apply("light"); uint lightInk=AppTheme.Color("Ink");
+            AppTheme.Apply("dark"); if(AppTheme.Color("Ink")==lightInk) throw new Exception("Theme palette did not change.");
+            AppTheme.Apply("system");
             Console.WriteLine("PASS: Chinese/English catalog, system language, invalid fallback, unchanged culture, persisted language");
         }
         finally

@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using ProxyTrafficFloat;
 
 namespace ProxyTrafficFloat.Native;
 
@@ -19,6 +20,7 @@ public sealed class NativeTip : IDisposable
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr hwnd, string app, string classes);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW")] static extern IntPtr SendTool(IntPtr hwnd, uint message, IntPtr w, ref Tool tool);
     IntPtr window, text; Tool tool; string previous = "";
+    int themeVersion;
     public NativeTip(IntPtr owner)
     {
         var init = new Init { Size = 8, Classes = 0xff };
@@ -27,8 +29,7 @@ public sealed class NativeTip : IDisposable
         if (window == IntPtr.Zero)
             return;
         SetWindowTheme(window, "", "");
-        Win.SendMessage(window, 0x413, new IntPtr(0x30211B), IntPtr.Zero);
-        Win.SendMessage(window, 0x414, new IntPtr(0xFAF1ED), IntPtr.Zero);
+        ApplyTheme();
         Win.SendMessage(window, 0x418, IntPtr.Zero, new IntPtr(420));
         Win.SendMessage(window, 0x403, new IntPtr(3), new IntPtr(500));
         Win.SendMessage(window, 0x403, new IntPtr(2), new IntPtr(12000));
@@ -41,8 +42,16 @@ public sealed class NativeTip : IDisposable
         if (window != IntPtr.Zero)
             Win.SendMessage(window, 0x401, enabled ? new IntPtr(1) : IntPtr.Zero, IntPtr.Zero);
     }
+    void ApplyTheme()
+    {
+        if(window==IntPtr.Zero||themeVersion==AppTheme.Version) return;
+        Win.SendMessage(window,0x413,new IntPtr(AppTheme.Bgr("Surface")),IntPtr.Zero);
+        Win.SendMessage(window,0x414,new IntPtr(AppTheme.Bgr("Ink")),IntPtr.Zero);
+        themeVersion=AppTheme.Version;
+    }
     public void Update(string value)
     {
+        ApplyTheme();
         if (window == IntPtr.Zero || value == previous)
             return;
         previous = value;

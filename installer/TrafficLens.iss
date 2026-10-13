@@ -1,6 +1,6 @@
 ; Build from scripts/package.ps1 after the two self-contained applications are merged.
 #ifndef AppVersion
-  #define AppVersion "2.0.0"
+  #define AppVersion "2.1.0"
 #endif
 #ifndef Runtime
   #define Runtime "win-x64"
