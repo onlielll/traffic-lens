@@ -67,8 +67,17 @@ public sealed class HeaderGlyphs : IDisposable
         graphics = IntPtr.Zero;
     }
 
+    int themeVersion;
     public void Draw(double scale, int logicalWidth, bool mini, bool locked, int hovered)
     {
+        if (themeVersion != AppTheme.Version)
+        {
+            GdipSetSolidFillColor(softInk, 0xFF000000 | AppTheme.Color("Muted"));
+            GdipSetSolidFillColor(hoverInk, 0xFF000000 | AppTheme.Color("Ink"));
+            GdipSetSolidFillColor(lockedInk, 0xFF000000 | AppTheme.Color("Accent"));
+            GdipSetSolidFillColor(hoverBackground, 0xD0000000 | AppTheme.Color("ControlHover"));
+            themeVersion=AppTheme.Version;
+        }
         if (mini)
             DrawButton(scale, logicalWidth - 24, 19, 2, locked, hovered);
         else
@@ -141,6 +150,7 @@ public sealed class HeaderGlyphs : IDisposable
     [DllImport(Library, ExactSpelling = true)] static extern int GdipSetPageUnit(IntPtr graphics, int unit);
     [DllImport(Library, ExactSpelling = true)] static extern int GdipFlush(IntPtr graphics, int intention);
     [DllImport(Library, ExactSpelling = true)] static extern int GdipCreateSolidFill(uint color, out IntPtr brush);
+    [DllImport(Library, ExactSpelling = true)] static extern int GdipSetSolidFillColor(IntPtr brush, uint color);
     [DllImport(Library, ExactSpelling = true)] static extern int GdipDeleteBrush(IntPtr brush);
     [DllImport(Library, ExactSpelling = true)] static extern int GdipCreateMatrix(out IntPtr matrix);
     [DllImport(Library, ExactSpelling = true)] static extern int GdipSetMatrixElements(IntPtr matrix, float m11, float m12, float m21, float m22, float dx, float dy);

@@ -36,6 +36,15 @@ public sealed class MihomoClient : IDisposable
         }
     }
 
+    public async Task<NodeLatency?> ReadLatencyAsync(string node, bool probe, double threshold, CancellationToken cancellation)
+    {
+        var active = client;
+        if (active == null) return null;
+        string path = "proxies/" + Uri.EscapeDataString(node);
+        if (probe) await active.GetStringAsync(path + "/delay?timeout=1500&url=" + Uri.EscapeDataString("https://www.gstatic.com/generate_204"), cancellation);
+        return NodeLatency.Parse(await active.GetStringAsync(path, cancellation), node, threshold);
+    }
+
     async Task ConnectAsync(Settings settings, CancellationToken cancellation)
     {
         var candidates = new List<(string Address, string Secret)>();

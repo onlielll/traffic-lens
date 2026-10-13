@@ -8,7 +8,8 @@ namespace ProxyTrafficFloat.Native;
 public sealed class Canvas : IDisposable
 {
     IntPtr dc, bitmap, oldBitmap;
-    readonly IntPtr background, surface;
+    IntPtr background, surface;
+    int themeVersion;
     IntPtr border, downPen, upPen, linePen;
     int width, height;
     double scale;
@@ -18,19 +19,21 @@ public sealed class Canvas : IDisposable
     readonly HeaderGlyphs glyphs = new();
 
     // Win32 COLORREF stores colors in BGR order; this matches the settings palette.
-    const uint Ink = 0xFBF3EE;
-    const uint Muted = 0xBAA294;
-    const uint Down = 0xBDD862;
-    const uint Up = 0xF9A3B1;
-    const uint Line = 0x594437;
+    uint Ink => AppTheme.Bgr("Ink");
+    uint Muted => AppTheme.Bgr("Muted");
+    uint Down => AppTheme.Bgr("Accent");
+    uint Up => AppTheme.Bgr("Upload");
+    uint Line => AppTheme.Bgr("Line");
 
     public Canvas()
     {
         var screen = Win.GetDC(IntPtr.Zero);
         dc = Win.CreateCompatibleDC(screen);
         Win.ReleaseDC(IntPtr.Zero, screen);
-        background = Win.CreateSolidBrush(0x1E1510);
-        surface = Win.CreateSolidBrush(0x2D2018);
+        AppTheme.Apply("system");
+        background = Win.CreateSolidBrush(AppTheme.Bgr("Canvas"));
+        surface = Win.CreateSolidBrush(AppTheme.Bgr("Surface"));
+        themeVersion = AppTheme.Version;
         Win.SetBkMode(dc, 1);
     }
 
@@ -95,7 +98,7 @@ public sealed class Canvas : IDisposable
         var key = (size, weight);
         if (!fonts.TryGetValue(key, out var font))
         {
-            font = Win.CreateFont(-P(size), 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, englishFonts ? "Segoe UI" : "Microsoft YaHei UI");
+            font = Win.CreateFont(-P(size), 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, englishFonts ? "Segoe UI" : "Microsoft YaHei");
             fonts[key] = font;
         }
         var previous = Win.SelectObject(dc, font);
@@ -117,7 +120,7 @@ public sealed class Canvas : IDisposable
     void Stroke(uint color, params ReadOnlySpan<(double X, double Y)> points)
     {
         // Inline points stay on the stack; DPI-aware color pens are cached for the canvas lifetime.
-        IntPtr pen = color switch { Down => downPen, Up => upPen, _ => linePen };
+        IntPtr pen = color == Down ? downPen : color == Up ? upPen : linePen;
         var previous = Win.SelectObject(dc, pen);
         for (int i = 0; i < points.Length; i++)
             path[i] = new Win.Point { X = P(points[i].X), Y = P(points[i].Y) };
@@ -135,6 +138,15 @@ public sealed class Canvas : IDisposable
 
     public void Render(NativeFrame frame, Settings config, bool mini, int hoverButton = -1)
     {
+        AppTheme.Apply(config.ColorMode);
+        if (themeVersion != AppTheme.Version)
+        {
+            Win.SelectObject(dc, Win.GetStockObject(5));
+            Win.DeleteObject(background); Win.DeleteObject(surface);
+            background=Win.CreateSolidBrush(AppTheme.Bgr("Canvas"));
+            surface=Win.CreateSolidBrush(AppTheme.Bgr("Surface"));
+            RebuildPens(); themeVersion=AppTheme.Version;
+        }
         if (englishFonts != Strings.IsEnglish)
         {
             ClearFonts();
@@ -188,6 +200,19 @@ public sealed class Canvas : IDisposable
                 12, y, logicalWidth - 24, 18, 10, Muted);
             y += 19;
         }
+        if (config.ShowQuotaForecast && config.HasQuota)
+        {
+            Text(frame.QuotaText ?? Strings.T("暂无可用趋势"),
+                12, y, logicalWidth - 24, 18, 10, Muted);
+            y += 19;
+        }
+        if (config.ShowNodeLatency)
+        {
+            Text(frame.LatencyCaption ?? Strings.T("暂无节点测速结果"), 12, y, logicalWidth - 24, 17, 9,
+                frame.Latency is { Slow: true, Fresh: true } ? 0x3399E5u : Muted);
+            if (frame.Latency is { } latency) Sparkline(latency.Samples, 12, y + 18, logicalWidth - 24, 11);
+            y += 34;
+        }
         Stroke(Line, (12, y + 2), (logicalWidth - 12, y + 2));
         Text(frame.Connected ? "●" : "○", 12, y + 4, 10, 16, 9, frame.Connected ? Down : Muted);
         Text(frame.Connected ? Strings.Format("代理 {0} · 未知 {1}", view.ProxyCount, view.UnknownCount) : Strings.T("连接中断 · 自动重连"),
@@ -206,6 +231,17 @@ public sealed class Canvas : IDisposable
         string metadata = target == null ? "—" : target.Process == "未知" ? Strings.T(target.Node) : Strings.T(target.Process) + " · " + Strings.T(target.Node);
         Text(metadata, contentX, y + 58, contentWidth, 14, 9, Muted);
         if (daily) Text(Strings.Format("今日 {0}", Display.Bytes(total)), contentX, y + 73, contentWidth, 14, 9, Muted);
+    }
+
+    void Sparkline(int[] values, int x, int y, int w, int h)
+    {
+        if (values.Length < 2) return;
+        int maximum = 300;
+        foreach (int value in values) maximum = Math.Max(maximum, value);
+        for (int i = 1; i < values.Length; i++)
+            if (values[i - 1] > 0 && values[i] > 0)
+                Stroke(Down, (x + (i - 1) * w / (double)(values.Length - 1), y + h - values[i - 1] * h / (double)maximum),
+                    (x + i * w / (double)(values.Length - 1), y + h - values[i] * h / (double)maximum));
     }
 
     public void PaintPart(IntPtr target, int x, int y, int w, int h)

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace ProxyTrafficFloat.Native;
 
-public static class Win
+public static partial class Win
 {
     public delegate IntPtr WindowProc(IntPtr hwnd, uint message, IntPtr w, IntPtr l);
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -54,10 +54,10 @@ public static class Win
     [DllImport("gdi32.dll")] public static extern int GetDIBits(IntPtr dc, IntPtr bitmap, uint first, uint count, byte[] pixels, ref BitmapInfo info, uint usage);
     public delegate bool MonitorProc(IntPtr monitor, IntPtr dc, IntPtr rect, IntPtr arg);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetModuleHandle(string? module);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern ushort RegisterClassEx(ref WindowClass cls);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr CreateWindowEx(uint ex, string cls, string title, uint style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern ushort RegisterClassEx(ref WindowClass cls);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern IntPtr CreateWindowEx(uint ex, string cls, string title, uint style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr DefWindowProc(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
-    [DllImport("user32.dll")] public static extern int GetMessage(out Message msg, IntPtr hwnd, uint min, uint max);
+    [DllImport("user32.dll", SetLastError = true)] public static extern int GetMessage(out Message msg, IntPtr hwnd, uint min, uint max);
     [DllImport("user32.dll")] public static extern bool TranslateMessage(ref Message msg);
     [DllImport("user32.dll")] public static extern IntPtr DispatchMessage(ref Message msg);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
@@ -76,7 +76,7 @@ public static class Win
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] public static extern int GetStyle(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] public static extern int SetStyle(IntPtr hwnd, int index, int flags);
     [DllImport("user32.dll")] public static extern bool SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
-    [DllImport("user32.dll")] public static extern IntPtr SetTimer(IntPtr hwnd, IntPtr id, uint interval, IntPtr callback);
+    [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr SetTimer(IntPtr hwnd, IntPtr id, uint interval, IntPtr callback);
     [DllImport("user32.dll")] public static extern bool KillTimer(IntPtr hwnd, IntPtr id);
     [DllImport("user32.dll")] public static extern bool ReleaseCapture();
     [DllImport("user32.dll")] public static extern IntPtr SetCapture(IntPtr hwnd);
@@ -96,7 +96,7 @@ public static class Win
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern bool Shell_NotifyIcon(uint action, ref IconData data);
     [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorProc callback, IntPtr arg);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
-    [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern uint RegisterWindowMessage(string message);
     [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(IntPtr monitor, int kind, out uint x, out uint y);
     [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleDC(IntPtr dc);
     [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);

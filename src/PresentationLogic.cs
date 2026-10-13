@@ -89,6 +89,8 @@ public sealed class CompactModeController
 
 public static class ScreenGeometry
 {
+    public static bool CoversScreen(int left, int top, int right, int bottom, int screenLeft, int screenTop, int screenRight, int screenBottom) =>
+        left <= screenLeft + 1 && top <= screenTop + 1 && right >= screenRight - 1 && bottom >= screenBottom - 1;
     public static (double X, double Y) Corner(double x, double y, double width, double height,
         double windowWidth, double windowHeight, int corner, double margin = 8)
     {

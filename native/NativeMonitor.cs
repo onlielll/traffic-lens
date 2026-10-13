@@ -13,11 +13,14 @@ namespace ProxyTrafficFloat.Native;
 
 public record NativeFrame(TrafficView View, bool Connected, string Status, string Source, long TodayDownload, long TodayUpload, long DownloadTargetTotal, long UploadTargetTotal)
 {
+    public string? QuotaText { get; init; }
+    public NodeLatency? Latency { get; init; }
+    public string? LatencyCaption { get; init; }
     public static NativeFrame Empty => new(new(0, 0, null, null, 0, 0, 0), false, Strings.T("正在连接…"), "", 0, 0, 0, 0);
 }
 public record Screen(string Name, Win.Rect Work, double Scale);
 
-public sealed class NativeMonitor : IDisposable
+public sealed partial class NativeMonitor : IDisposable
 {
     const uint UpdateMessage = 0x8001, ConfigMessage = 0x8002, TrayMessage = 0x8003, ActivateMessage = 0x8004;
     readonly string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProxyTrafficFloat");
@@ -41,22 +44,33 @@ public sealed class NativeMonitor : IDisposable
     double settingsStarted;
     int pixelWidth, pixelHeight, success, failures; double drawScale = 1;
     Win.IconData icon; string lastTip = "";
-    readonly string ConfigPath, LivePath, clearPath;
+    readonly uint taskbarCreated = Win.RegisterWindowMessage("TaskbarCreated");
+    bool trayReady;
+    double trayRetryAt;
+    readonly string ConfigPath, LivePath, clearPath, reconnectPath;
     public NativeMonitor(string[] args, EventWaitHandle activate)
     {
         this.args = args;
         this.activate = activate;
-        if (args.Length > 1 && args[0] == "--native-test")
-            root = Path.Combine(args[1], "test-session", Guid.NewGuid().ToString("N"));
+        if (args.Length > 1 && args[0] is "--native-test" or "--timeline-soak")
+        {
+            string location = args[0] == "--native-test" ? args[1] : Path.GetDirectoryName(args[1])!;
+            root = Path.Combine(location, "test-session", Guid.NewGuid().ToString("N"));
+        }
         ConfigPath = Path.Combine(root, "settings.json");
         LivePath = Path.Combine(root, "live.json");
         clearPath = Path.Combine(root, "clear.signal");
+        reconnectPath = Path.Combine(root, "reconnect.signal");
         Directory.CreateDirectory(root);
         config = Settings.Load(ConfigPath);
+        AppTheme.Apply(config.ColorMode);
         Strings.UseLanguage(config.Language);
         frame = NativeFrame.Empty;
-        if (args.Length > 0 && args[0] == "--native-test")
+        if (args.Length > 0 && args[0] is "--native-test" or "--timeline-soak")
+        {
             config.Visible = false;
+            config.RecordTimeline = true;
+        }
         procedure = WndProc;
     }
     public int Run()
@@ -69,38 +83,88 @@ public sealed class NativeMonitor : IDisposable
         if (hwnd == IntPtr.Zero)
             throw new IOException(Strings.T("创建悬浮窗失败"));
         icon = new Win.IconData { Size = (uint)Marshal.SizeOf<Win.IconData>(), Hwnd = hwnd, Id = 1, Flags = 7, Callback = TrayMessage, Icon = TrayIcon.Create(), Tip = Strings.T("代理流量 · 正在连接"), Info = "", Title = "" };
-        Win.Shell_NotifyIcon(0, ref icon);
+        AddTrayIcon();
         tip = new NativeTip(hwnd);
         ApplyGeometry();
         ApplyVisibility();
-        Win.SetTimer(hwnd, new IntPtr(1), 250, IntPtr.Zero);
+        if (Win.SetTimer(hwnd, new IntPtr(1), 250, IntPtr.Zero) == IntPtr.Zero)
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         activationWait = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => Win.PostMessage(hwnd, ActivateMessage, IntPtr.Zero, IntPtr.Zero), null, Timeout.Infinite, false);
         worker = Task.Run(MonitorLoopAsync);
-        if (args.Length > 1 && args[0] == "--soak")
+        if (args.Length > 1 && args[0] is "--soak" or "--timeline-soak")
             _ = Task.Run(() => SoakAsync(args[1], args.Length > 2 && int.TryParse(args[2], out var duration) ? duration : 3600));
-        while (Win.GetMessage(out var message, IntPtr.Zero, 0, 0) > 0)
-        {
-            Win.TranslateMessage(ref message);
-            Win.DispatchMessage(ref message);
-        }
-        stop.Cancel();
         try
         {
+            while (true)
+            {
+                int result = Win.GetMessage(out var message, IntPtr.Zero, 0, 0);
+                if (result < 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                if (result == 0) break;
+                Win.TranslateMessage(ref message);
+                Win.DispatchMessage(ref message);
+            }
+        }
+        finally
+        {
+            stop.Cancel();
             worker.GetAwaiter().GetResult();
         }
-        catch (OperationCanceledException) { }
         return 0;
     }
     async Task MonitorLoopAsync()
     {
+        try { await PollAsync(); }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            Diagnostics.Write(root, "monitor-startup", error);
+            Interlocked.Increment(ref failures);
+            var failed = NativeFrame.Empty with { Status = Strings.T("监控启动失败，请查看日志。") };
+            Volatile.Write(ref frame, failed);
+            PublishStatus(new(false, failed.Status, "", DateTimeOffset.UtcNow));
+            Win.PostMessage(hwnd, UpdateMessage, IntPtr.Zero, IntPtr.Zero);
+        }
+    }
+
+    bool PublishStatus(LiveStatus status)
+    {
+        try
+        {
+            string temporary = LivePath + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(status, MonitorJson.Default.LiveStatus));
+            File.Move(temporary, LivePath, true);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Diagnostics.Write(root, "publish-status", error);
+            return false;
+        }
+    }
+
+    async Task PollAsync()
+    {
         using var client = new MihomoClient();
         var engine = new TrafficEngine();
+        Task<NodeLatency?>? latencyRequest = null;
+        NodeLatency? latency = null;
+        string desiredNode = "", latencyLanguage = "";
+        string? latencyCaption = null;
+        double latencyAt = -60;
         using var store = new TrafficStore(Path.Combine(root, "traffic.sqlite"));
         var today = store.Today();
-        DateTime day = DateTime.Today, configTime = File.Exists(ConfigPath) ? File.GetLastWriteTimeUtc(ConfigPath) : DateTime.MinValue;
+        long todayDownload = today.Values.Sum(a => a.Download), todayUpload = today.Values.Sum(a => a.Upload);
+        long observedBytes = store.ObservedBytes();
+        string? quotaText = null;
+        string quotaLanguage = "";
+        DateTime quotaUpdated = default;
+        double forecastAt = -60;
+        var timeline = new TimelineRecorder(store);
+        DateTime day = DateTime.Today, configTime = config.ModifiedUtc;
         string endpoint = config.Endpoint, secret = config.ProtectedSecret;
         LiveStatus? published = null;
-        double publishedAt = -15;
+        double publishedAt = -15, prunedAt = -60, retryAt = 0;
+        int retrySeconds = 1;
         using var interval = new PeriodicTimer(TimeSpan.FromSeconds(1));
         try
         {
@@ -115,72 +179,165 @@ public sealed class NativeMonitor : IDisposable
                         bool modeChanged = config.MiniMode != fresh.MiniMode;
                         Volatile.Write(ref config, fresh);
                         Strings.UseLanguage(fresh.Language);
-                        configTime = time;
+                        configTime = fresh.ModifiedUtc;
                         Win.PostMessage(hwnd, ConfigMessage, modeChanged ? new IntPtr(1) : IntPtr.Zero, IntPtr.Zero);
                     }
                     var cfg = Volatile.Read(ref config);
-                    if (cfg.Endpoint != endpoint || cfg.ProtectedSecret != secret)
+                    bool requested = File.Exists(reconnectPath);
+                    if (requested || cfg.Endpoint != endpoint || cfg.ProtectedSecret != secret)
                     {
+                        if (requested) File.Delete(reconnectPath);
                         client.Dispose();
                         engine.Reset();
+                        timeline.Break();
                         endpoint = cfg.Endpoint;
                         secret = cfg.ProtectedSecret;
+                        retryAt = 0;
+                        retrySeconds = 1;
                     }
                     if (day != DateTime.Today)
                     {
                         day = DateTime.Today;
                         store.Prune(day);
+                        store.PruneTimeline(DateTimeOffset.UtcNow);
                         today = store.Today();
+                        todayDownload = today.Values.Sum(a => a.Download);
+                        todayUpload = today.Values.Sum(a => a.Upload);
+                        forecastAt = -60;
                     }
-                    var snapshot = await client.ReadAsync(cfg, stop.Token);
-                    var increments = engine.Sample(snapshot, watch.Elapsed.TotalSeconds, DateTime.Now);
-                    string status = Strings.T("已连接 · ") + Strings.T(client.Source);
-                    try
-                    {
-                        store.Add(increments);
-                        foreach (var increment in increments)
-                        {
-                            if (increment.Day.Date != day)
-                                continue;
-                            today.TryGetValue(increment.Target, out var old);
-                            today[increment.Target] = new((old?.Download ?? 0) + increment.Download, (old?.Upload ?? 0) + increment.Upload);
-                        }
-                    }
-                    catch { status = Strings.T("实时监控正常 · 统计保存失败"); }
-                    // A clear requested by the settings process must also clear the in-memory totals.
+                    // Consume clear requests even while the API is unavailable, before pending history can flush.
                     if (File.Exists(clearPath))
                     {
+                        timeline.Clear();
                         store.Clear();
                         today.Clear();
+                        todayDownload = todayUpload = 0;
+                        quotaText = null;
+                        forecastAt = -60;
                         File.Delete(clearPath);
                     }
-                    var view = engine.View(cfg.SingleConnection);
-                    today.TryGetValue(view.DownloadTop?.Target ?? "", out var down);
-                    today.TryGetValue(view.UploadTop?.Target ?? "", out var up);
-                    Volatile.Write(ref frame, new(view, true, status, client.Source, today.Values.Sum(a => a.Download), today.Values.Sum(a => a.Upload), down?.Download ?? 0, up?.Upload ?? 0));
-                    Interlocked.Increment(ref success);
+                    if (watch.Elapsed.TotalSeconds - prunedAt >= 60)
+                    {
+                        store.PruneTimeline(DateTimeOffset.UtcNow);
+                        prunedAt = watch.Elapsed.TotalSeconds;
+                    }
+                    // Forecasting depends on local records, including while the core is offline.
+                    double now = watch.Elapsed.TotalSeconds;
+                    if (!cfg.ShowQuotaForecast || !cfg.HasQuota) { quotaText = null; forecastAt = -60; }
+                    else if (now - forecastAt >= 60 || quotaUpdated != cfg.QuotaUpdatedUtc || quotaLanguage != Strings.Language)
+                    {
+                        var estimate = QuotaForecast.Calculate(cfg, observedBytes, store.RecentDailyTrend(day))!.Value;
+                        quotaText = Strings.Format("预计可用 · {0}", estimate.DurationText);
+                        quotaLanguage = Strings.Language;
+                        quotaUpdated = cfg.QuotaUpdatedUtc;
+                        forecastAt = now;
+                    }
+                    if (watch.Elapsed.TotalSeconds >= retryAt)
+                    {
+                        var snapshot = await client.ReadAsync(cfg, stop.Token);
+                        retryAt = 0;
+                        retrySeconds = 1;
+                        double sampleTime = watch.Elapsed.TotalSeconds;
+                        var sampledAt = DateTimeOffset.Now;
+                        var increments = engine.Sample(snapshot, sampleTime, sampledAt.DateTime);
+                        string status = Strings.T("内核在线 · ") + Strings.T(client.Source);
+                        try
+                        {
+                            store.Add(increments);
+                            foreach (var increment in increments)
+                            {
+                                observedBytes += increment.Download + increment.Upload;
+                                if (increment.Day.Date != day)
+                                    continue;
+                                todayDownload += increment.Download;
+                                todayUpload += increment.Upload;
+                                today.TryGetValue(increment.Target, out var old);
+                                today[increment.Target] = new((old?.Download ?? 0) + increment.Download, (old?.Upload ?? 0) + increment.Upload);
+                            }
+                            timeline.Observe(increments, sampleTime, sampledAt, cfg.RecordTimeline);
+
+                        }
+                        catch (IOException error)
+                        {
+                            status = Strings.T("实时监控正常 · 统计保存失败");
+                            Diagnostics.Write(root, "statistics-save", error);
+                        }
+                        var view = engine.View(cfg.SingleConnection);
+                        string node = cfg.LatencyNode.Trim();
+                        if (node.Length == 0) node = view.DownloadTop?.Node is string dn && dn != "多个" ? dn : view.UploadTop?.Node ?? desiredNode;
+                        if (node != desiredNode) { desiredNode = node; latency = null; latencyCaption = null; latencyAt = -60; }
+                        if (latencyRequest?.IsCompleted == true)
+                        {
+                            try
+                            {
+                                var result = await latencyRequest;
+                                if (result?.Node == desiredNode) { latency = result; latencyCaption = result.Caption; latencyLanguage = Strings.Language; }
+                            }
+                            catch (Exception error) when (error is not OperationCanceledException || !stop.IsCancellationRequested) { Diagnostics.Write(root, "node-latency", error); }
+                            latencyRequest = null;
+                        }
+                        if (!cfg.MonitorNodeLatency) { latency = null; latencyCaption = null; }
+                        else if (desiredNode.Length > 0 && desiredNode != "多个" && latencyRequest == null && now - latencyAt >= (cfg.ProbeNodeLatency ? 60 : 15))
+                        {
+                            latencyRequest = client.ReadLatencyAsync(desiredNode, cfg.ProbeNodeLatency, cfg.SlowNodeMs, stop.Token);
+                            latencyAt = now;
+                        }
+                        if (latency != null && latencyLanguage != Strings.Language) { latencyCaption = latency.Caption; latencyLanguage = Strings.Language; }
+                        today.TryGetValue(view.DownloadTop?.Target ?? "", out var down);
+                        today.TryGetValue(view.UploadTop?.Target ?? "", out var up);
+                        Volatile.Write(ref frame, new(view, true, status, client.Source, todayDownload, todayUpload, down?.Download ?? 0, up?.Upload ?? 0)
+                        {
+                            QuotaText = quotaText,
+                            Latency = latency,
+                            LatencyCaption = latencyCaption
+                        });
+                        Interlocked.Increment(ref success);
+                    }
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
-                catch { engine.Reset(); Volatile.Write(ref frame, NativeFrame.Empty with { Status = Strings.T("连接中断 · 自动重连") }); Interlocked.Increment(ref failures); }
+                catch (Exception error)
+                {
+                    engine.Reset();
+                    try { timeline.Break(); }
+                    catch (IOException saveError) { Diagnostics.Write(root, "timeline-save", saveError); }
+                    Volatile.Write(ref frame, NativeFrame.Empty with
+                    {
+                        Status = Strings.T("连接中断 · 自动重连"),
+                        TodayDownload = todayDownload,
+                        TodayUpload = todayUpload,
+                        QuotaText = quotaText
+                    });
+                    Diagnostics.Write(root, "monitor-read", error);
+                    retryAt = watch.Elapsed.TotalSeconds + retrySeconds;
+                    retrySeconds = Math.Min(30, retrySeconds * 2);
+                    Interlocked.Increment(ref failures);
+                }
                 var latest = Volatile.Read(ref frame);
+                if (latest.QuotaText != quotaText)
+                {
+                    latest = latest with { QuotaText = quotaText };
+                    Volatile.Write(ref frame, latest);
+                }
                 // Publish changes immediately; an idle heartbeat every 15 seconds avoids repeated disk writes.
                 if (published == null || published.connected != latest.Connected || published.status != latest.Status || published.source != latest.Source || watch.Elapsed.TotalSeconds - publishedAt >= 15)
                 {
-                    try
+                    var status = new LiveStatus(latest.Connected, latest.Status, latest.Source, DateTimeOffset.UtcNow, latest.Latency);
+                    if (PublishStatus(status))
                     {
-                        published = new LiveStatus(latest.Connected, latest.Status, latest.Source, DateTimeOffset.UtcNow);
-                        var json = JsonSerializer.Serialize(published, MonitorJson.Default.LiveStatus);
-                        var tmp = LivePath + ".tmp";
-                        File.WriteAllText(tmp, json);
-                        File.Move(tmp, LivePath, true);
+                        published = status;
                         publishedAt = watch.Elapsed.TotalSeconds;
                     }
-                    catch (IOException) { }
                 }
                 Win.PostMessage(hwnd, UpdateMessage, IntPtr.Zero, IntPtr.Zero);
             } while (await interval.WaitForNextTickAsync(stop.Token));
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+        finally
+        {
+            try { timeline.Flush(); } catch (IOException error) { Diagnostics.Write(root, "timeline-flush", error); }
+            if (latencyRequest != null)
+                try { await latencyRequest; } catch (OperationCanceledException) { } catch (Exception error) { Diagnostics.Write(root, "node-latency", error); }
+        }
     }
     IntPtr WndProc(IntPtr window, uint message, IntPtr w, IntPtr l)
     {
@@ -188,8 +345,30 @@ public sealed class NativeMonitor : IDisposable
         {
             if (window == unlockWindow && unlockWindow != IntPtr.Zero)
                 return UnlockProc(window, message, w, l);
+            if (taskbarCreated != 0 && message == taskbarCreated && window == hwnd)
+            {
+                AddTrayIcon();
+                return IntPtr.Zero;
+            }
             switch (message)
             {
+                case 0x0084: // WM_NCHITTEST uses screen coordinates, including negative monitor origins.
+                    Win.GetWindowRect(window, out var bounds);
+                    int hit = ResizeHit((short)(l.ToInt64() & 0xffff) - bounds.Left, (short)((l.ToInt64() >> 16) & 0xffff) - bounds.Top);
+                    if (hit != 0) return new IntPtr(hit);
+                    break;
+                case 0x00A1: // Corner resize starts native pointer capture, independent of mini mode.
+                    if (w.ToInt32() is 13 or 14 or 16 or 17 && !config.Locked && !config.ClickThrough)
+                    {
+                        Win.GetCursorPos(out var resizePoint);
+                        BeginPointerResize(w.ToInt32(), resizePoint);
+                        return IntPtr.Zero;
+                    }
+                    break;
+                case 0x0003: // WM_MOVE can also arrive from system/window-manager moves.
+                    if (window == hwnd && unlockWindow != IntPtr.Zero && !geometryBusy)
+                        SyncLockWindow();
+                    return IntPtr.Zero;
                 case 0x0014:
                     return new IntPtr(1);
                 case 0x0020:
@@ -226,12 +405,17 @@ public sealed class NativeMonitor : IDisposable
                     return IntPtr.Zero;
                 case 0x0113:
                     RefreshMode();
+                    RefreshFullscreen();
+                    if (!trayReady && watch.Elapsed.TotalSeconds >= trayRetryAt)
+                        AddTrayIcon();
                     if (args.Length > 1 && args[0] == "--native-test")
                         NativeTest();
                     return IntPtr.Zero;
                 case 0x02E0:
                 case 0x007E:
                 case 0x001A:
+                    AppTheme.Apply(config.ColorMode, true);
+                    Win.InvalidateRect(hwnd, IntPtr.Zero, false);
                     ApplyGeometry();
                     return IntPtr.Zero;
                 case 0x0216:
@@ -315,7 +499,9 @@ public sealed class NativeMonitor : IDisposable
                     closing = true;
                     stop.Cancel();
                     Win.KillTimer(window, new IntPtr(1));
-                    Win.Shell_NotifyIcon(2, ref icon);
+                    if (trayReady && !Win.Shell_NotifyIcon(2, ref icon))
+                        Diagnostics.Write(root, "tray-remove", new IOException());
+                    trayReady = false;
                     Win.PostQuitMessage(0);
                     return IntPtr.Zero;
             }
@@ -354,6 +540,7 @@ public sealed class NativeMonitor : IDisposable
     }
     void MovePointerDrag(Win.Point pointer)
     {
+        if (resizeCorner != 0) { MovePointerResize(pointer); return; }
         if (!dragArmed || config.Locked)
             return;
         int dx = pointer.X - dragOrigin.X, dy = pointer.Y - dragOrigin.Y;
@@ -383,7 +570,8 @@ public sealed class NativeMonitor : IDisposable
         tip?.Enable(!config.Locked);
         if (moved)
         {
-            RememberPosition();
+            RememberPosition(resizeCorner == 0 ? null : config.UiScale);
+            resizeCorner = 0; resizeScreen = null;
             ApplyGeometry();
         }
         else if (expand)
@@ -434,7 +622,7 @@ public sealed class NativeMonitor : IDisposable
                     screen = preferred;
             }
             double ww = screen.Work.Right - screen.Work.Left, hh = screen.Work.Bottom - screen.Work.Top;
-            int logicalWidth = mini ? 220 : 304, logicalHeight = mini ? 58 : 28 + (cfg.ShowSpeed ? 22 : 0) + (cfg.ShowDownload || cfg.ShowUpload ? (cfg.ShowTargetTotal ? 91 : 76) : 0) + (cfg.ShowTotal ? 19 : 0) + 23;
+            int logicalWidth = mini ? 220 : 304, logicalHeight = mini ? 58 : 28 + (cfg.ShowSpeed ? 22 : 0) + (cfg.ShowDownload || cfg.ShowUpload ? (cfg.ShowTargetTotal ? 91 : 76) : 0) + (cfg.ShowTotal ? 19 : 0) + (cfg.ShowQuotaForecast && cfg.HasQuota ? 19 : 0) + (cfg.ShowNodeLatency ? 34 : 0) + 23;
             drawScale = screen.Scale * Math.Min(cfg.UiScale, Math.Min((ww - 16 * screen.Scale) / (logicalWidth * screen.Scale), (hh - 16 * screen.Scale) / (logicalHeight * screen.Scale)));
             drawScale = Math.Max(0.5, drawScale);
             int width = Math.Max(1, (int)Math.Round(logicalWidth * drawScale)), height = Math.Max(1, (int)Math.Round(logicalHeight * drawScale));
@@ -452,18 +640,11 @@ public sealed class NativeMonitor : IDisposable
                 position = ScreenGeometry.Clamp(r.Left, r.Top, screen.Work.Left, screen.Work.Top, ww, hh, width, height);
             Win.SetWindowPos(hwnd, config.AlwaysOnTop ? new IntPtr(-1) : new IntPtr(-2), (int)Math.Round(position.X), (int)Math.Round(position.Y), width, height, 0x0010);
             restored = true;
-            if (pixelWidth != width || pixelHeight != height)
-            {
-                pixelWidth = width;
-                pixelHeight = height;
-                var region = Win.CreateRoundRectRgn(0, 0, width + 1, height + 1, (int)(18 * drawScale), (int)(18 * drawScale));
-                if (!Win.SetWindowRgn(hwnd, region, true))
-                    Win.DeleteObject(region);
-            }
-            canvas.Resize(width, height, drawScale);
+            ResizeCanvas(width, height);
             Win.SetLayeredWindowAttributes(hwnd, 0, (byte)Math.Round(cfg.Opacity * 255), 2);
             int flags = Win.GetStyle(hwnd, -20);
             Win.SetStyle(hwnd, -20, (cfg.Locked ? cfg.LockClickThrough : cfg.ClickThrough) ? flags | 0x20 : flags & ~0x20);
+            Win.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, 0x0037);
             SyncLockWindow();
             tip?.Enable(!cfg.Locked);
             Win.InvalidateRect(hwnd, IntPtr.Zero, false);
@@ -472,14 +653,15 @@ public sealed class NativeMonitor : IDisposable
     }
     void ApplyVisibility()
     {
-        Win.ShowWindow(hwnd, config.Visible ? 4 : 0);
+        Win.ShowWindow(hwnd, config.Visible && !fullscreenHidden ? 4 : 0);
         if (unlockWindow != IntPtr.Zero)
-            Win.ShowWindow(unlockWindow, config.Visible ? 4 : 0);
-        if (config.Visible)
+            Win.ShowWindow(unlockWindow, config.Visible && !fullscreenHidden ? 4 : 0);
+        if (config.Visible && !fullscreenHidden)
             Win.SetWindowPos(hwnd, config.AlwaysOnTop ? new IntPtr(-1) : new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
     }
     void RefreshLanguage()
     {
+        AppTheme.Apply(config.ColorMode);
         Strings.UseLanguage(config.Language);
         Win.SetWindowText(hwnd, Strings.T("代理流量悬浮窗"));
         if (unlockWindow != IntPtr.Zero) Win.SetWindowText(unlockWindow, Strings.T("解锁代理流量"));
@@ -489,10 +671,8 @@ public sealed class NativeMonitor : IDisposable
     }
     void Change(Action<Settings> change)
     {
-        var fresh = Settings.Load(ConfigPath);
-        bool wasMini = fresh.MiniMode;
-        change(fresh);
-        fresh.Save(ConfigPath);
+        bool wasMini = config.MiniMode;
+        var fresh = Settings.Update(ConfigPath, change);
         config = fresh;
         RefreshLanguage();
         if (wasMini != fresh.MiniMode)
@@ -501,11 +681,11 @@ public sealed class NativeMonitor : IDisposable
         ApplyGeometry();
         ApplyVisibility();
     }
-    void RememberPosition()
+    void RememberPosition(double? uiScale = null)
     {
         var screen = CurrentScreen(false);
         Win.GetWindowRect(hwnd, out var r);
-        Change(c => { if (c.MiniMode) { c.MiniDockCorner = false; c.MiniHasAnchor = true; c.MiniMonitorName = screen.Name; c.MiniAnchorX = Math.Clamp((double)(r.Left - screen.Work.Left) / Math.Max(1, screen.Work.Right - screen.Work.Left - (r.Right - r.Left)), 0, 1); c.MiniAnchorY = Math.Clamp((double)(r.Top - screen.Work.Top) / Math.Max(1, screen.Work.Bottom - screen.Work.Top - (r.Bottom - r.Top)), 0, 1); return; } c.MonitorName = screen.Name; c.HasAnchor = true; c.AnchorX = Math.Clamp((double)(r.Left - screen.Work.Left) / Math.Max(1, screen.Work.Right - screen.Work.Left - (r.Right - r.Left)), 0, 1); c.AnchorY = Math.Clamp((double)(r.Top - screen.Work.Top) / Math.Max(1, screen.Work.Bottom - screen.Work.Top - (r.Bottom - r.Top)), 0, 1); c.Left = r.Left / screen.Scale; c.Top = r.Top / screen.Scale; });
+        Change(c => { if (uiScale.HasValue) c.UiScale = uiScale.Value; if (c.MiniMode) { c.MiniDockCorner = false; c.MiniHasAnchor = true; c.MiniMonitorName = screen.Name; c.MiniAnchorX = Math.Clamp((double)(r.Left - screen.Work.Left) / Math.Max(1, screen.Work.Right - screen.Work.Left - (r.Right - r.Left)), 0, 1); c.MiniAnchorY = Math.Clamp((double)(r.Top - screen.Work.Top) / Math.Max(1, screen.Work.Bottom - screen.Work.Top - (r.Bottom - r.Top)), 0, 1); return; } c.MonitorName = screen.Name; c.HasAnchor = true; c.AnchorX = Math.Clamp((double)(r.Left - screen.Work.Left) / Math.Max(1, screen.Work.Right - screen.Work.Left - (r.Right - r.Left)), 0, 1); c.AnchorY = Math.Clamp((double)(r.Top - screen.Work.Top) / Math.Max(1, screen.Work.Bottom - screen.Work.Top - (r.Bottom - r.Top)), 0, 1); c.Left = r.Left / screen.Scale; c.Top = r.Top / screen.Scale; });
     }
     bool IsLockPoint(int x, int y, int width) => mini ? x >= width - 25 && y >= 0 && y < 58 : x >= width - 46 && x < width - 24 && y >= 0 && y < 27;
     void TrackButtons(IntPtr window, IntPtr position, bool unlock)
@@ -586,7 +766,7 @@ public sealed class NativeMonitor : IDisposable
             Win.GetWindowRect(hwnd, out var outer);
             Win.SetLayeredWindowAttributes(unlockWindow, 0, (byte)Math.Round(config.Opacity * 255), 2);
             Win.SetWindowPos(unlockWindow, config.AlwaysOnTop ? new IntPtr(-1) : new IntPtr(-2), outer.Left + local.Left, outer.Top + local.Top, local.Right - local.Left, local.Bottom - local.Top, 0x0010);
-            Win.ShowWindow(unlockWindow, config.Visible ? 4 : 0);
+            Win.ShowWindow(unlockWindow, config.Visible && !fullscreenHidden ? 4 : 0);
             Win.InvalidateRect(unlockWindow, IntPtr.Zero, false);
         }
         else if (unlockWindow != IntPtr.Zero)
@@ -603,6 +783,15 @@ public sealed class NativeMonitor : IDisposable
             Strings.T("上传最快") + "\n" + Target(latest.View.UploadTop, false) + "\n\n" + latest.Status + "\n" +
             Strings.T("顶部按钮：设置 · 迷你模式 · 锁定 · 隐藏"));
     }
+    void AddTrayIcon()
+    {
+        icon.Flags = 7; // Restoring after TaskbarCreated needs the icon and callback flags too.
+        trayReady = Win.Shell_NotifyIcon(0, ref icon);
+        trayRetryAt = watch.Elapsed.TotalSeconds + 5;
+        if (!trayReady)
+            Diagnostics.Write(root, "tray-add", new IOException());
+    }
+
     void UpdateTip()
     {
         var latest = Volatile.Read(ref frame);
@@ -612,7 +801,12 @@ public sealed class NativeMonitor : IDisposable
         lastTip = text;
         icon.Tip = text;
         icon.Flags = 4;
-        Win.Shell_NotifyIcon(1, ref icon);
+        if (trayReady && !Win.Shell_NotifyIcon(1, ref icon))
+        {
+            trayReady = false;
+            trayRetryAt = watch.Elapsed.TotalSeconds + 5;
+            Diagnostics.Write(root, "tray-update", new IOException());
+        }
     }
     void ShowMenu()
     {
@@ -652,7 +846,11 @@ public sealed class NativeMonitor : IDisposable
                     break;
             }
         }
-        finally { Win.DestroyMenu(menu); }
+        finally
+        {
+            Win.DestroyMenu(menu);
+            Win.PostMessage(hwnd, 0, IntPtr.Zero, IntPtr.Zero);
+        }
     }
     void OpenSettings(bool testing = false)
     {
@@ -681,16 +879,20 @@ public sealed class NativeMonitor : IDisposable
             using var writer = new StreamWriter(output) { AutoFlush = true };
             await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakStart("start", DateTimeOffset.Now, duration, "native-gdi"), MonitorJson.Default.SoakStart));
             var clock = Stopwatch.StartNew();
+            var trend = new ResourceTrend();
             while (clock.Elapsed.TotalSeconds < duration && !stop.IsCancellationRequested)
             {
                 await Task.Delay(Math.Min(30000, Math.Max(1, (int)((duration - clock.Elapsed.TotalSeconds) * 1000))), stop.Token);
                 using var process = Process.GetCurrentProcess();
+                if (clock.Elapsed.TotalSeconds >= Math.Min(120, duration * 0.2))
+                    trend.Add(process.PrivateMemorySize64);
                 await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakSample("sample", clock.Elapsed.TotalSeconds, success, failures, process.WorkingSet64, process.PrivateMemorySize64, GC.GetTotalMemory(false), process.HandleCount, Win.GetGuiResources(process.Handle, 0), Win.GetGuiResources(process.Handle, 1)), MonitorJson.Default.SoakSample));
             }
-            await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakResult("complete", clock.Elapsed.TotalSeconds, success, failures), MonitorJson.Default.SoakResult));
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakResult(trend.Stable == false ? "failed" : "complete", clock.Elapsed.TotalSeconds, success, failures, trend.Stable, trend.Growth), MonitorJson.Default.SoakResult));
+            if (args[0] == "--timeline-soak") Win.PostMessage(hwnd, 0x10, IntPtr.Zero, IntPtr.Zero);
         }
         catch (OperationCanceledException) { }
-        catch { }
+        catch (Exception error) { Diagnostics.Write(root, "soak-failed", error); }
     }
     void NativeTest()
     {
@@ -705,7 +907,13 @@ public sealed class NativeMonitor : IDisposable
             canvas.SaveBitmap(Path.Combine(output, "native-detail.bmp"));
             using var process = Process.GetCurrentProcess();
             uint gdiStart = Win.GetGuiResources(process.Handle, 0);
-            int assertions = 0;
+            int assertions = VerifyViewportForTest(output);
+            if (!Win.Shell_NotifyIcon(2, ref icon)) throw new Exception("Could not remove the test tray icon.");
+            trayReady = false;
+            icon.Flags = 4;
+            Win.SendMessage(hwnd, taskbarCreated, IntPtr.Zero, IntPtr.Zero);
+            if (!trayReady || icon.Flags != 7) throw new Exception("TaskbarCreated did not restore the tray icon and callback.");
+            assertions++;
             for (int i = 0; i < 10000; i++)
                 canvas.Render(Volatile.Read(ref frame), config, mini, i % 4);
             if (Win.GetGuiResources(process.Handle, 0) > gdiStart + 2)
@@ -740,6 +948,24 @@ public sealed class NativeMonitor : IDisposable
             if (Win.GetGuiResources(process.Handle, 0) > gdiStart + 5)
                 throw new Exception(Strings.T("缩放/调整缓冲区时 GDI 对象增长"));
             assertions++;
+            var themeCounts=new System.Collections.Generic.List<uint>();
+            uint beforeThemes=Win.GetGuiResources(process.Handle,0);
+            for(int i=0;i<100;i++)
+            {
+                config.ColorMode=i%2==0?"light":"dark";
+                canvas.Render(Volatile.Read(ref frame),config,mini);
+                themeCounts.Add(Win.GetGuiResources(process.Handle,0));
+            }
+            File.WriteAllText(Path.Combine(output,"theme-gdi.txt"),"before="+beforeThemes+" cycles="+string.Join(",",themeCounts));
+            if(themeCounts.Skip(2).Any(count=>count!=themeCounts[1])) throw new Exception("Theme switch leaked GDI resources after palette warmup.");
+            assertions++;
+            config.MiniMode=false; compact.Reset(); RefreshMode(); ApplyGeometry();
+            foreach(string mode in new[]{"light","dark"})
+            {
+                config.ColorMode=mode; canvas.Render(Volatile.Read(ref frame),config,mini);
+                canvas.SaveBitmap(Path.Combine(output,"native-theme-"+mode+".bmp"));
+            }
+            config.ColorMode="system";
             config.UiScale = 1;
             config.MiniMode = false;
             config.Locked = true;
@@ -747,6 +973,13 @@ public sealed class NativeMonitor : IDisposable
             ApplyGeometry();
             if ((Win.GetStyle(hwnd, -20) & 0x20) == 0 || unlockWindow == IntPtr.Zero)
                 throw new Exception(Strings.T("锁定穿透或解锁热点失败"));
+            assertions++;
+            Win.GetWindowRect(hwnd, out var ownerBefore);
+            Win.GetWindowRect(unlockWindow, out var hotspotBefore);
+            Win.SetWindowPos(hwnd, IntPtr.Zero, ownerBefore.Left + 7, ownerBefore.Top + 5, 0, 0, 0x0015);
+            Win.GetWindowRect(unlockWindow, out var hotspotAfter);
+            if (hotspotAfter.Left - hotspotBefore.Left != 7 || hotspotAfter.Top - hotspotBefore.Top != 5)
+                throw new Exception("System move left the unlock hotspot behind.");
             assertions++;
             Win.SendMessage(unlockWindow, 0x0200, IntPtr.Zero, IntPtr.Zero);
             if (hoverButton != 2) throw new Exception(Strings.T("解锁热点悬停反馈失败"));
@@ -847,12 +1080,31 @@ public sealed class NativeMonitor : IDisposable
             assertions++;
             canvas.Render(Volatile.Read(ref frame), config, mini);
             canvas.SaveBitmap(Path.Combine(output, "native-detail.bmp"));
+            int heightBefore = pixelHeight;
+            config.ShowQuotaForecast = true;
+            config.QuotaUpdatedUtc = DateTime.UtcNow;
+            config.QuotaGB = 48;
+            ApplyGeometry();
+            if (Math.Abs(pixelHeight - heightBefore - 19 * drawScale) > 1) throw new Exception($"Quota row height was not reserved: before={heightBefore}, after={pixelHeight}, scale={drawScale}, ui={config.UiScale}, node={config.ShowNodeLatency}, drag={dragArmed}/{dragging}.");
+            assertions++;
+            var preview = Volatile.Read(ref frame) with { QuotaText = Strings.Format("预计可用 · {0}", new QuotaForecast(48_000_000_000, 1_000_000_000, 7).DurationText) };
+            canvas.Render(preview, config, mini);
+            canvas.SaveBitmap(Path.Combine(output, "native-quota.bmp"));
+            uint quotaGdi = Win.GetGuiResources(process.Handle, 0);
+            for (int i = 0; i < 10000; i++) canvas.Render(preview, config, mini);
+            if (Win.GetGuiResources(process.Handle, 0) != quotaGdi) throw new Exception("Quota painting retained GDI resources.");
+            assertions++;
+            config.MiniMode = true; compact.Reset(); RefreshMode(); ApplyGeometry();
+            if (pixelHeight != (int)Math.Round(58 * drawScale)) throw new Exception("Quota changed mini mode size.");
+            assertions++;
+            config.MiniMode = false; config.ShowQuotaForecast = false; config.QuotaUpdatedUtc = default;
+            compact.Reset(); RefreshMode(); ApplyGeometry();
             config.Visible = false;
             ApplyVisibility();
             OpenSettings(true);
             File.WriteAllText(Path.Combine(output, "native-test.txt"), $"PASS: {assertions} assertions, direct mouse drag in both modes, capture/release and saved position, 10000 paints, 100 resize/mode cycles, four corners; GDI start={gdiStart}, end={Win.GetGuiResources(process.Handle, 0)}\n");
         }
-        else if (watch.Elapsed.TotalSeconds - settingsStarted > 8)
+        else if (watch.Elapsed.TotalSeconds - settingsStarted > 20)
         {
             testPhase = 2;
             _ = Task.Run(async () =>
@@ -914,7 +1166,8 @@ public static class Entry
     [STAThread]
     public static void Main(string[] args)
     {
-        string name = @"Local\ProxyTrafficFloat.User." + Environment.UserName;
+        string suffix = args.Length == 0 ? "" : args[0] switch { "--native-test" => ".NativeTest", "--timeline-soak" => ".TimelineSoak", _ => "" };
+        string name = @"Local\ProxyTrafficFloat.User." + Environment.UserName + suffix;
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + ".Activate");
         using var mutex = new Mutex(false, name);
         bool owns;
@@ -931,9 +1184,14 @@ public static class Entry
         try
         {
             using var monitor = new NativeMonitor(args, activate);
-            monitor.Run();
+            Environment.ExitCode = monitor.Run();
         }
-        catch (Exception ex) { Win.MessageBox(IntPtr.Zero, Strings.T(ex.Message), Strings.T("代理流量"), 0x10); }
+        catch (Exception error)
+        {
+            Diagnostics.Write(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProxyTrafficFloat"), "native-startup", error);
+            Win.MessageBox(IntPtr.Zero, Strings.T("程序未能启动，请查看日志。"), Strings.T("代理流量"), 0x10);
+            Environment.ExitCode = 1;
+        }
         finally { mutex.ReleaseMutex(); }
     }
 }

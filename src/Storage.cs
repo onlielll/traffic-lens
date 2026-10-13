@@ -6,18 +6,39 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Security.Cryptography;
+using System.Threading;
 
 namespace ProxyTrafficFloat;
 
 public sealed class Settings
 {
     public string Language { get; set; } = "auto";
+    public string ColorMode { get; set; } = "system";
     public bool Visible { get; set; } = true;
+    public bool HideInFullscreen { get; set; }
+    public bool MonitorNodeLatency { get; set; } = true;
+    public bool ShowNodeLatency { get; set; }
+    public bool ProbeNodeLatency { get; set; }
+    public string LatencyNode { get; set; } = "";
+    public double SlowNodeMs { get; set; } = 300;
+    public bool PreviewUpdates { get; set; }
     public bool ShowSpeed { get; set; } = true;
     public bool ShowDownload { get; set; } = true;
     public bool ShowUpload { get; set; } = true;
     public bool ShowTotal { get; set; } = true;
+    public bool ShowQuotaForecast { get; set; }
+    public double QuotaGB { get; set; }
+    public long QuotaBaselineBytes { get; set; }
+    public DateTime QuotaUpdatedUtc { get; set; }
+    [JsonIgnore]
+    public bool HasQuota => QuotaUpdatedUtc != default;
     public bool ShowTargetTotal { get; set; }
+    public bool RecordTimeline { get; set; }
+    public bool TimelinePeaks { get; set; } = true;
+    public int TimelineRecentMinutes { get; set; } = 10;
+    public int TimelineMetric { get; set; }
+    public int TimelineRange { get; set; }
     public bool SingleConnection { get; set; }
     public bool Locked { get; set; }
     public bool ClickThrough { get; set; }
@@ -55,16 +76,49 @@ public sealed class Settings
         set => ProtectedSecret = WindowsCrypto.Protect(value);
     }
 
-    public static Settings Load(string path)
+    [JsonIgnore]
+    public DateTime ModifiedUtc { get; private set; }
+    [JsonIgnore]
+    public bool Recovered { get; private set; }
+    public Settings Copy() => (Settings)MemberwiseClone();
+
+    // Both readers and read-modify-write operations cooperate on the same per-file mutex.
+    static T WithFileLock<T>(string path, Func<T> action)
+    {
+        string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(path).ToUpperInvariant())))[..16];
+        using var mutex = new Mutex(false, @"Local\TrafficLens.Settings." + key);
+        try { mutex.WaitOne(); }
+        catch (AbandonedMutexException) { } // The next owner can recover the last atomic file.
+        try { return action(); }
+        finally { mutex.ReleaseMutex(); }
+    }
+
+    public static Settings Load(string path) => WithFileLock(path, () => Read(path));
+
+    public static Settings Update(string path, Action<Settings> change) => WithFileLock(path, () =>
+    {
+        var latest = Read(path);
+        change(latest);
+        latest.Write(path);
+        return latest;
+    });
+
+    static Settings Read(string path)
     {
         try
         {
-            var settings = JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJson.Default.Settings) ?? new();
+            var settings = JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJson.Default.Settings) ?? throw new JsonException("Expected settings object.");
             settings.Language = Strings.NormalizeLanguage(settings.Language);
+            settings.ColorMode = AppTheme.Normalize(settings.ColorMode);
             // Settings can be edited outside the app. Bound values before they reach window geometry or timers.
+            settings.SlowNodeMs = Clamp(settings.SlowNodeMs, 50, 10000, 300);
+            settings.QuotaGB = Clamp(settings.QuotaGB, 0, 1048576, 0);
             settings.Opacity = Clamp(settings.Opacity, 0.35, 1, 0.92);
             settings.UiScale = Clamp(settings.UiScale, 0.8, 1.25, 1);
             settings.Corner = Math.Clamp(settings.Corner, 0, 3);
+            settings.TimelineMetric = Math.Clamp(settings.TimelineMetric, 0, 1);
+            settings.TimelineRecentMinutes = settings.TimelineRecentMinutes == 60 ? 60 : 10;
+            settings.TimelineRange = Math.Clamp(settings.TimelineRange, 0, 2);
             settings.DownloadThresholdKB = Clamp(settings.DownloadThresholdKB, 1, 1048576, 1024);
             settings.UploadThresholdKB = Clamp(settings.UploadThresholdKB, 1, 1048576, 512);
             settings.TriggerSeconds = Clamp(settings.TriggerSeconds, 1, 30, 2);
@@ -73,24 +127,32 @@ public sealed class Settings
             settings.AnchorY = Clamp(settings.AnchorY, 0, 1, 0.1);
             settings.MiniAnchorX = Clamp(settings.MiniAnchorX, 0, 1, 1);
             settings.MiniAnchorY = Clamp(settings.MiniAnchorY, 0, 1, 1);
+            settings.ModifiedUtc = File.GetLastWriteTimeUtc(path);
             return settings;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (FileNotFoundException) { return new(); }
+        catch (DirectoryNotFoundException) { return new(); }
+        catch (JsonException error)
         {
-            return new();
+            File.Move(path, path + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff"));
+            Diagnostics.Write(Path.GetDirectoryName(path)!, "settings-corrupt", error);
+            return new() { Recovered = true };
         }
     }
 
     static double Clamp(double value, double minimum, double maximum, double fallback) =>
         Math.Clamp(double.IsFinite(value) ? value : fallback, minimum, maximum);
 
-    public void Save(string path)
+    // Complete snapshots use Save; concurrent field edits use Update.
+    public void Save(string path) => WithFileLock(path, () => { Write(path); return this; });
+    void Write(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         // The resident monitor and settings host can save at the same time.
         string temporary = path + "." + Environment.ProcessId + ".tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(this, SettingsJson.Default.Settings));
         File.Move(temporary, path, true);
+        ModifiedUtc = File.GetLastWriteTimeUtc(path);
     }
 }
 
@@ -151,7 +213,7 @@ public static class WindowsCrypto
 
 public record DailyRow(string Target, long Download, long Upload);
 
-public sealed class TrafficStore : IDisposable
+public sealed partial class TrafficStore : IDisposable
 {
     IntPtr db;
 
@@ -180,8 +242,18 @@ public sealed class TrafficStore : IDisposable
             if (sqlite3_open(path, out db) != 0) throw new IOException("无法打开统计数据库");
             Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000; " +
                 "CREATE TABLE IF NOT EXISTS daily(day TEXT NOT NULL,target TEXT NOT NULL," +
-                "download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(day,target));");
+                "download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(day,target));" +
+                "CREATE TABLE IF NOT EXISTS usage_counter(id INTEGER PRIMARY KEY,bytes INTEGER NOT NULL);" +
+                "INSERT OR IGNORE INTO usage_counter SELECT 1,COALESCE((SELECT SUM(download+upload) FROM daily),0) WHERE NOT EXISTS(SELECT 1 FROM usage_counter WHERE id=1);" +
+                "CREATE TABLE IF NOT EXISTS timeline(minute INTEGER NOT NULL,target TEXT NOT NULL," +
+                "download INTEGER NOT NULL,upload INTEGER NOT NULL,seconds REAL NOT NULL,first INTEGER NOT NULL,last INTEGER NOT NULL," +
+                "PRIMARY KEY(minute,target));" +
+                "CREATE TABLE IF NOT EXISTS timeline_names(id INTEGER PRIMARY KEY,target TEXT NOT NULL UNIQUE);" +
+                "CREATE TABLE IF NOT EXISTS timeline_seconds(stamp INTEGER PRIMARY KEY,download INTEGER NOT NULL,upload INTEGER NOT NULL,seconds REAL NOT NULL);" +
+                "CREATE TABLE IF NOT EXISTS timeline_target_seconds(stamp INTEGER NOT NULL,target_id INTEGER NOT NULL,download INTEGER NOT NULL,upload INTEGER NOT NULL,PRIMARY KEY(stamp,target_id)) WITHOUT ROWID;" +
+                "CREATE INDEX IF NOT EXISTS timeline_target_time ON timeline_target_seconds(target_id,stamp);");
             Prune(DateTime.Today);
+            PruneTimeline(DateTimeOffset.UtcNow);
         }
         catch
         {
@@ -212,20 +284,25 @@ public sealed class TrafficStore : IDisposable
         }
         if (rows.Count == 0) return;
 
+        long observed = 0;
         var sql = new StringBuilder("BEGIN IMMEDIATE;");
         foreach (var row in rows)
         {
+            observed = checked(observed + row.Value.Download + row.Value.Upload);
             string day = Quote(row.Key.Day.ToString("yyyy-MM-dd")), target = Quote(row.Key.Target);
             // INSERT OR IGNORE + UPDATE also works with SQLite versions shipped in older Windows 10.
             sql.Append($"INSERT OR IGNORE INTO daily VALUES({day},{target},0,0);");
             sql.Append($"UPDATE daily SET download=download+{row.Value.Download},upload=upload+{row.Value.Upload} " +
                 $"WHERE day={day} AND target={target};");
         }
-        sql.Append("COMMIT;");
-        try
-        {
-            Exec(sql.ToString());
-        }
+        // One bounded counter shares the daily transaction and survives history pruning/clearing.
+        sql.Append($"UPDATE usage_counter SET bytes=bytes+{observed} WHERE id=1;COMMIT;");
+        Transaction(sql.ToString());
+    }
+
+    void Transaction(string sql)
+    {
+        try { Exec(sql); }
         catch
         {
             try { Exec("ROLLBACK;"); } catch (IOException) { }
@@ -253,11 +330,39 @@ public sealed class TrafficStore : IDisposable
         return rows;
     }
 
+    public long ObservedBytes()
+    {
+        long bytes = 0;
+        Callback callback = (_, _, values, _) =>
+            long.TryParse(Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(values)), out bytes) ? 0 : 1;
+        Exec("SELECT bytes FROM usage_counter WHERE id=1;", callback);
+        GC.KeepAlive(callback);
+        return bytes;
+    }
+
+    public UsageTrend RecentDailyTrend(DateTime today)
+    {
+        UsageTrend trend = default;
+        Callback callback = (_, _, values, _) =>
+        {
+            string average = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(values)) ?? "0";
+            string count = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(values, IntPtr.Size)) ?? "0";
+            if (!double.TryParse(average, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bytes) || !int.TryParse(count, out var days)) return 1;
+            trend = new(bytes, days);
+            return 0;
+        };
+        // Exclude the unfinished current day; at most seven recorded days within retained history.
+        Exec($"SELECT COALESCE(AVG(bytes),0),COUNT(*) FROM (SELECT SUM(download+upload) AS bytes FROM daily " +
+            $"WHERE day<{Quote(today.Date.ToString("yyyy-MM-dd"))} GROUP BY day HAVING bytes>0 ORDER BY day DESC LIMIT 7);", callback);
+        GC.KeepAlive(callback);
+        return trend;
+    }
+
     public Dictionary<string, Amount> Today() =>
         Query(DateTime.Today, DateTime.Today).ToDictionary(row => row.Target, row => new Amount(row.Download, row.Upload));
 
     public void Prune(DateTime today) => Exec($"DELETE FROM daily WHERE day<{Quote(today.Date.AddDays(-29).ToString("yyyy-MM-dd"))};");
-    public void Clear() => Exec("DELETE FROM daily;");
+    public void Clear() => Transaction("BEGIN IMMEDIATE;DELETE FROM daily;DELETE FROM timeline;DELETE FROM timeline_target_seconds;DELETE FROM timeline_seconds;DELETE FROM timeline_names;COMMIT;");
 
     public void Dispose()
     {
