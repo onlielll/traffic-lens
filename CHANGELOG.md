@@ -1,6 +1,6 @@
 # 更新记录
 
-## 2.1.0 · 2026-10-13
+## 2.1.0 · 2026-10-14
 
 - 加入本地额度估算：手动填写剩余 GB，自动扣减后续监测用量，按最近 7 个往日记录日估算；展开悬浮窗可选显示。
 - 复用主题样式、未变化的排行和下拉选项，最小化时暂停页面数据刷新；原生每日总量按增量更新，额度文本低频生成，不增加每次绘制分配。
@@ -20,6 +20,19 @@
 - 手动重连实际生效；失败重连逐步退避，状态心跳保持更新，断线保留已有每日累计。
 - 清除设置端无用查询；诊断日志限频、轮换且不记录密钥或个人连接内容，持续运行验证加入有界资源趋势检查。
 - 补充中英文界面、依赖许可及资源、存储和性能验证。
+
+- 历史查询改为后台只读读取，连续筛选只显示最终结果；导出和备份不再重复建表或删除历史。
+- 修复清空顺序、空节点设置、延迟过期与旧请求覆盖；辅助文件读取失败不再打断正常采样。
+- 增加全屏自动隐藏、四角缩放、节点延迟趋势、CSV导出、数据备份和手动更新检查。
+- 自检与截图仅包含在独立验证构建中；损坏配置备份保留最近三份。
+
+### English
+
+- Optional one-second traffic history for the last 24 hours, smooth charts, exact interval totals, themes, and Chinese/English layouts.
+- A compact overlay with fullscreen hiding, corner resizing, optional node latency trends, and allowance forecasting.
+- CSV export, local database backups, and manual GitHub update checks.
+- Responsive background history queries with unchanged totals; fixes for clearing records, stale latency, and optional settings.
+- Separate verification builds and bounded damaged-settings backups.
 
 ## 2.0.0 · 2026-10-11 · 首次公开预览
 

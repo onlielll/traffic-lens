@@ -30,8 +30,59 @@ public static class StorageTests
         }
         finally { sqlite3_close(database); }
     }
+    static void ReadOnlyDoesNotMaintainHistory()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "TrafficLens-readonly-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        string path = Path.Combine(root, "live.sqlite");
+        try
+        {
+            using (var writer = new TrafficStore(path))
+                writer.Add(new[] { new Increment(DateTime.Today, "live.test", 7, 2) });
+            Execute(path, "DROP TABLE usage_counter; INSERT INTO daily VALUES('2000-01-01','old.test',100,20);" +
+                "INSERT INTO timeline_seconds VALUES(1,5,1,1);" +
+                "CREATE TRIGGER protect_daily BEFORE DELETE ON daily BEGIN SELECT RAISE(ABORT,'reader pruned daily'); END;" +
+                "CREATE TRIGGER protect_seconds BEFORE DELETE ON timeline_seconds BEGIN SELECT RAISE(ABORT,'reader pruned timeline'); END;");
+            byte[] before = File.ReadAllBytes(path);
+            using (var reader = TrafficStore.OpenReadOnly(path))
+            {
+                if (reader.Query(new DateTime(2000, 1, 1), DateTime.Today).Count != 2)
+                    throw new Exception("Read-only query lost retained fixture rows.");
+                reader.ExportCsv(Path.Combine(root, "daily.csv"), false);
+                reader.ExportCsv(Path.Combine(root, "timeline.csv"), true);
+                reader.Backup(Path.Combine(root, "backup.sqlite"));
+            }
+            if (!before.SequenceEqual(File.ReadAllBytes(path)))
+                throw new Exception("Read-only query/export/backup modified source database bytes.");
+            if (!File.ReadAllText(Path.Combine(root, "daily.csv")).Contains("old.test") || File.ReadAllLines(Path.Combine(root, "timeline.csv")).Length != 2)
+                throw new Exception("Read-only export pruned fixture history.");
+            using (var backup = TrafficStore.OpenReadOnly(Path.Combine(root, "backup.sqlite")))
+                if (backup.Query(new DateTime(2000, 1, 1), DateTime.Today).Count != 2)
+                    throw new Exception("Read-only backup lost committed source history.");
+            string writeCheck = Path.Combine(root, "write-check.sqlite");
+            using (var writer = new TrafficStore(writeCheck))
+                writer.Add(new[] { new Increment(DateTime.Today, "original.test", 3, 1) });
+            using (var reader = TrafficStore.OpenReadOnly(writeCheck))
+            {
+                bool rejected = false;
+                try { reader.Add(new[] { new Increment(DateTime.Today, "bad.test", 1, 0) }); }
+                catch (IOException) { rejected = true; }
+                if (!rejected || reader.Today().Count != 1) throw new Exception("Read-only handle accepted a write against a complete schema.");
+            }
+            string missing = Path.Combine(root, "missing.sqlite");
+            bool missingRejected = false;
+            try { using var absent = TrafficStore.OpenReadOnly(missing); } catch (IOException) { missingRejected = true; }
+            if (!missingRejected || File.Exists(missing)) throw new Exception("Read-only open created an absent database.");
+            bool schemaMissing = false;
+            try { Execute(path, "SELECT * FROM usage_counter;"); } catch (Exception) { schemaMissing = true; }
+            if (!schemaMissing) throw new Exception("Read-only opening performed schema migration.");
+            Console.WriteLine("PASS: read-only queries, CSV and online backup preserve source schema/history/bytes and reject writes");
+        }
+        finally { Directory.Delete(root, true); }
+    }
     public static void Run()
     {
+        ReadOnlyDoesNotMaintainHistory();
         string path = Path.Combine(Path.GetTempPath(), "ProxyTrafficFloat-rollback-" + Guid.NewGuid() + ".sqlite");
         try
         {

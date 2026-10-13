@@ -34,14 +34,13 @@ public sealed partial class NativeMonitor : IDisposable
     NativeTip? tip;
     IntPtr hwnd, unlockWindow; List<Screen>? dragScreens;
     Task? worker; Process? settingsProcess;
+    int exitCode;
     bool mini, restored, dragging, closing, geometryBusy;
     bool dragArmed, dragWasMini;
     Win.Point dragOrigin;
     Win.Rect dragBounds;
-    int testPhase;
     int hoverButton = -1;
     IntPtr trackedMouse;
-    double settingsStarted;
     int pixelWidth, pixelHeight, success, failures; double drawScale = 1;
     Win.IconData icon; string lastTip = "";
     readonly uint taskbarCreated = Win.RegisterWindowMessage("TaskbarCreated");
@@ -52,11 +51,13 @@ public sealed partial class NativeMonitor : IDisposable
     {
         this.args = args;
         this.activate = activate;
+#if TRAFFIC_LENS_VERIFICATION
         if (args.Length > 1 && args[0] is "--native-test" or "--timeline-soak")
         {
             string location = args[0] == "--native-test" ? args[1] : Path.GetDirectoryName(args[1])!;
             root = Path.Combine(location, "test-session", Guid.NewGuid().ToString("N"));
         }
+#endif
         ConfigPath = Path.Combine(root, "settings.json");
         LivePath = Path.Combine(root, "live.json");
         clearPath = Path.Combine(root, "clear.signal");
@@ -66,15 +67,24 @@ public sealed partial class NativeMonitor : IDisposable
         AppTheme.Apply(config.ColorMode);
         Strings.UseLanguage(config.Language);
         frame = NativeFrame.Empty;
+#if TRAFFIC_LENS_VERIFICATION
         if (args.Length > 0 && args[0] is "--native-test" or "--timeline-soak")
         {
             config.Visible = false;
             config.RecordTimeline = true;
         }
+#endif
         procedure = WndProc;
     }
     public int Run()
     {
+#if TRAFFIC_LENS_VERIFICATION
+        if (args.Length > 1 && args[0] == "--native-test")
+        {
+            Directory.CreateDirectory(args[1]);
+            File.WriteAllText(Path.Combine(args[1], "native-test.txt"), "RUNNING: Native verification has not completed.\n");
+        }
+#endif
         var instance = Win.GetModuleHandle(null);
         var cls = new Win.WindowClass { Size = (uint)Marshal.SizeOf<Win.WindowClass>(), Name = "ProxyTrafficFloat.NativeWindow", Proc = procedure, Instance = instance, Cursor = Win.LoadCursor(IntPtr.Zero, new IntPtr(32512)) };
         if (Win.RegisterClassEx(ref cls) == 0)
@@ -91,8 +101,10 @@ public sealed partial class NativeMonitor : IDisposable
             throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         activationWait = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => Win.PostMessage(hwnd, ActivateMessage, IntPtr.Zero, IntPtr.Zero), null, Timeout.Infinite, false);
         worker = Task.Run(MonitorLoopAsync);
+#if TRAFFIC_LENS_VERIFICATION
         if (args.Length > 1 && args[0] is "--soak" or "--timeline-soak")
-            _ = Task.Run(() => SoakAsync(args[1], args.Length > 2 && int.TryParse(args[2], out var duration) ? duration : 3600));
+            soak = Task.Run(() => SoakAsync(args[1], args.Length > 2 && int.TryParse(args[2], out var duration) ? duration : 3600));
+#endif
         try
         {
             while (true)
@@ -108,8 +120,25 @@ public sealed partial class NativeMonitor : IDisposable
         {
             stop.Cancel();
             worker.GetAwaiter().GetResult();
+#if TRAFFIC_LENS_VERIFICATION
+            soak?.GetAwaiter().GetResult();
+            verification?.GetAwaiter().GetResult();
+#endif
         }
-        return 0;
+#if TRAFFIC_LENS_VERIFICATION
+        if (args.Length > 1 && args[0] == "--native-test")
+        {
+            if (!childVerified) return 1;
+            foreach (string name in new[] { "native-test.txt", "settings-test.txt" })
+            {
+                string path = Path.Combine(args[1], name);
+                if (!File.Exists(path)) return 1;
+                string report = File.ReadAllText(path);
+                if (!report.StartsWith("PASS:", StringComparison.Ordinal) || report.Contains("FAIL:", StringComparison.Ordinal)) return 1;
+            }
+        }
+#endif
+        return exitCode;
     }
     async Task MonitorLoopAsync()
     {
@@ -151,6 +180,16 @@ public sealed partial class NativeMonitor : IDisposable
         string desiredNode = "", latencyLanguage = "";
         string? latencyCaption = null;
         double latencyAt = -60;
+        int latencyGeneration = 0, requestGeneration = 0;
+        string requestNode = "";
+        bool latencyFresh = false;
+        void InvalidateLatency()
+        {
+            latencyGeneration++;
+            latency = null;
+            latencyCaption = null;
+            latencyAt = -60;
+        }
         using var store = new TrafficStore(Path.Combine(root, "traffic.sqlite"));
         var today = store.Today();
         long todayDownload = today.Values.Sum(a => a.Download), todayUpload = today.Values.Sum(a => a.Upload);
@@ -172,6 +211,10 @@ public sealed partial class NativeMonitor : IDisposable
             {
                 try
                 {
+                    bool localFailed = false;
+                    double now = watch.Elapsed.TotalSeconds;
+                    try
+                    {
                     var time = File.Exists(ConfigPath) ? File.GetLastWriteTimeUtc(ConfigPath) : DateTime.MinValue;
                     if (time != configTime)
                     {
@@ -182,25 +225,45 @@ public sealed partial class NativeMonitor : IDisposable
                         configTime = fresh.ModifiedUtc;
                         Win.PostMessage(hwnd, ConfigMessage, modeChanged ? new IntPtr(1) : IntPtr.Zero, IntPtr.Zero);
                     }
+                    }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                    {
+                        localFailed = true;
+                        Diagnostics.Write(root, "settings-read", error);
+                    }
                     var cfg = Volatile.Read(ref config);
                     bool requested = File.Exists(reconnectPath);
+                    if (requested)
+                    {
+                        try { File.Delete(reconnectPath); }
+                        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                        {
+                            requested = false;
+                            localFailed = true;
+                            Diagnostics.Write(root, "reconnect-signal", error);
+                        }
+                    }
                     if (requested || cfg.Endpoint != endpoint || cfg.ProtectedSecret != secret)
                     {
-                        if (requested) File.Delete(reconnectPath);
                         client.Dispose();
+                        InvalidateLatency();
                         engine.Reset();
-                        timeline.Break();
+                        try { timeline.Break(); }
+                        catch (IOException error) { localFailed = true; Diagnostics.Write(root, "timeline-save", error); }
                         endpoint = cfg.Endpoint;
                         secret = cfg.ProtectedSecret;
                         retryAt = 0;
                         retrySeconds = 1;
                     }
+                    try
+                    {
                     if (day != DateTime.Today)
                     {
-                        day = DateTime.Today;
-                        store.Prune(day);
+                        var nextDay = DateTime.Today;
+                        store.Prune(nextDay);
                         store.PruneTimeline(DateTimeOffset.UtcNow);
                         today = store.Today();
+                        day = nextDay;
                         todayDownload = today.Values.Sum(a => a.Download);
                         todayUpload = today.Values.Sum(a => a.Upload);
                         forecastAt = -60;
@@ -208,8 +271,8 @@ public sealed partial class NativeMonitor : IDisposable
                     // Consume clear requests even while the API is unavailable, before pending history can flush.
                     if (File.Exists(clearPath))
                     {
-                        timeline.Clear();
                         store.Clear();
+                        timeline.Clear();
                         today.Clear();
                         todayDownload = todayUpload = 0;
                         quotaText = null;
@@ -222,7 +285,6 @@ public sealed partial class NativeMonitor : IDisposable
                         prunedAt = watch.Elapsed.TotalSeconds;
                     }
                     // Forecasting depends on local records, including while the core is offline.
-                    double now = watch.Elapsed.TotalSeconds;
                     if (!cfg.ShowQuotaForecast || !cfg.HasQuota) { quotaText = null; forecastAt = -60; }
                     else if (now - forecastAt >= 60 || quotaUpdated != cfg.QuotaUpdatedUtc || quotaLanguage != Strings.Language)
                     {
@@ -232,6 +294,13 @@ public sealed partial class NativeMonitor : IDisposable
                         quotaUpdated = cfg.QuotaUpdatedUtc;
                         forecastAt = now;
                     }
+                    }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                    {
+                        localFailed = true;
+                        quotaText = null;
+                        Diagnostics.Write(root, "statistics-maintenance", error);
+                    }
                     if (watch.Elapsed.TotalSeconds >= retryAt)
                     {
                         var snapshot = await client.ReadAsync(cfg, stop.Token);
@@ -240,7 +309,7 @@ public sealed partial class NativeMonitor : IDisposable
                         double sampleTime = watch.Elapsed.TotalSeconds;
                         var sampledAt = DateTimeOffset.Now;
                         var increments = engine.Sample(snapshot, sampleTime, sampledAt.DateTime);
-                        string status = Strings.T("内核在线 · ") + Strings.T(client.Source);
+                        string status = localFailed ? Strings.T("实时监控正常 · 本机数据读取失败") : Strings.T("内核在线 · ") + Strings.T(client.Source);
                         try
                         {
                             store.Add(increments);
@@ -263,15 +332,21 @@ public sealed partial class NativeMonitor : IDisposable
                             Diagnostics.Write(root, "statistics-save", error);
                         }
                         var view = engine.View(cfg.SingleConnection);
-                        string node = cfg.LatencyNode.Trim();
-                        if (node.Length == 0) node = view.DownloadTop?.Node is string dn && dn != "多个" ? dn : view.UploadTop?.Node ?? desiredNode;
-                        if (node != desiredNode) { desiredNode = node; latency = null; latencyCaption = null; latencyAt = -60; }
+                        string node = cfg.MonitorNodeLatency ? cfg.LatencyNode : "";
+                        if (cfg.MonitorNodeLatency && node.Length == 0) node = view.DownloadTop?.Node is string dn && dn != "多个" ? dn : view.UploadTop?.Node ?? desiredNode;
+                        if (node != desiredNode) { desiredNode = node; InvalidateLatency(); }
                         if (latencyRequest?.IsCompleted == true)
                         {
                             try
                             {
                                 var result = await latencyRequest;
-                                if (result?.Node == desiredNode) { latency = result; latencyCaption = result.Caption; latencyLanguage = Strings.Language; }
+                                if (cfg.MonitorNodeLatency && requestGeneration == latencyGeneration && requestNode == desiredNode)
+                                {
+                                    latency = result;
+                                    latencyCaption = result?.Caption;
+                                    latencyFresh = result?.Fresh ?? false;
+                                    latencyLanguage = Strings.Language;
+                                }
                             }
                             catch (Exception error) when (error is not OperationCanceledException || !stop.IsCancellationRequested) { Diagnostics.Write(root, "node-latency", error); }
                             latencyRequest = null;
@@ -279,10 +354,17 @@ public sealed partial class NativeMonitor : IDisposable
                         if (!cfg.MonitorNodeLatency) { latency = null; latencyCaption = null; }
                         else if (desiredNode.Length > 0 && desiredNode != "多个" && latencyRequest == null && now - latencyAt >= (cfg.ProbeNodeLatency ? 60 : 15))
                         {
+                            requestGeneration = latencyGeneration;
+                            requestNode = desiredNode;
                             latencyRequest = client.ReadLatencyAsync(desiredNode, cfg.ProbeNodeLatency, cfg.SlowNodeMs, stop.Token);
                             latencyAt = now;
                         }
-                        if (latency != null && latencyLanguage != Strings.Language) { latencyCaption = latency.Caption; latencyLanguage = Strings.Language; }
+                        if (latency != null && (latencyLanguage != Strings.Language || latencyFresh != latency.Fresh))
+                        {
+                            latencyFresh = latency.Fresh;
+                            latencyCaption = latency.Caption;
+                            latencyLanguage = Strings.Language;
+                        }
                         today.TryGetValue(view.DownloadTop?.Target ?? "", out var down);
                         today.TryGetValue(view.UploadTop?.Target ?? "", out var up);
                         Volatile.Write(ref frame, new(view, true, status, client.Source, todayDownload, todayUpload, down?.Download ?? 0, up?.Upload ?? 0)
@@ -298,6 +380,7 @@ public sealed partial class NativeMonitor : IDisposable
                 catch (Exception error)
                 {
                     engine.Reset();
+                    InvalidateLatency();
                     try { timeline.Break(); }
                     catch (IOException saveError) { Diagnostics.Write(root, "timeline-save", saveError); }
                     Volatile.Write(ref frame, NativeFrame.Empty with
@@ -408,8 +491,10 @@ public sealed partial class NativeMonitor : IDisposable
                     RefreshFullscreen();
                     if (!trayReady && watch.Elapsed.TotalSeconds >= trayRetryAt)
                         AddTrayIcon();
+#if TRAFFIC_LENS_VERIFICATION
                     if (args.Length > 1 && args[0] == "--native-test")
                         NativeTest();
+#endif
                     return IntPtr.Zero;
                 case 0x02E0:
                 case 0x007E:
@@ -506,7 +591,19 @@ public sealed partial class NativeMonitor : IDisposable
                     return IntPtr.Zero;
             }
         }
-        catch (Exception ex) { if (args.Length > 1 && args[0] == "--native-test") { File.AppendAllText(Path.Combine(args[1], "native-test.txt"), "FAIL: " + ex + "\n"); Close("test-failure"); } else Win.MessageBox(window, Strings.T(ex.Message), Strings.T("代理流量"), 0x10); }
+        catch (Exception error)
+        {
+            exitCode = 1;
+            Diagnostics.Write(root, "window-message", error);
+            bool testing = false;
+#if TRAFFIC_LENS_VERIFICATION
+            testing = args.Length > 1 && args[0] == "--native-test";
+            if (testing) File.AppendAllText(Path.Combine(args[1], "native-test.txt"), "FAIL: " + error + "\n");
+#endif
+            // Stop a failed window before another paint/message can repeat the same error dialog.
+            Close("window-error");
+            if (!testing) Win.MessageBox(IntPtr.Zero, Strings.T("悬浮窗发生错误，请重新启动。"), "Traffic Lens", 0x10);
+        }
         return Win.DefWindowProc(window, message, w, l);
     }
     void RefreshMode()
@@ -868,263 +965,12 @@ public sealed partial class NativeMonitor : IDisposable
         var executable = Path.Combine(AppContext.BaseDirectory, "ProxyTrafficSettings.exe");
         if (!File.Exists(executable))
             throw new IOException(Strings.T("找不到独立设置程序，请保留 app 文件夹中的全部文件。"));
-        settingsProcess = Process.Start(new ProcessStartInfo(executable, testing ? "--ui-test \"" + args[1] + "\"" : "--settings-host") { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory });
+        string options = "--settings-host";
+#if TRAFFIC_LENS_VERIFICATION
+        if (testing) options = "--ui-test \"" + args[1] + "\"";
         settingsStarted = watch.Elapsed.TotalSeconds;
-    }
-    async Task SoakAsync(string output, int duration)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-            using var writer = new StreamWriter(output) { AutoFlush = true };
-            await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakStart("start", DateTimeOffset.Now, duration, "native-gdi"), MonitorJson.Default.SoakStart));
-            var clock = Stopwatch.StartNew();
-            var trend = new ResourceTrend();
-            while (clock.Elapsed.TotalSeconds < duration && !stop.IsCancellationRequested)
-            {
-                await Task.Delay(Math.Min(30000, Math.Max(1, (int)((duration - clock.Elapsed.TotalSeconds) * 1000))), stop.Token);
-                using var process = Process.GetCurrentProcess();
-                if (clock.Elapsed.TotalSeconds >= Math.Min(120, duration * 0.2))
-                    trend.Add(process.PrivateMemorySize64);
-                await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakSample("sample", clock.Elapsed.TotalSeconds, success, failures, process.WorkingSet64, process.PrivateMemorySize64, GC.GetTotalMemory(false), process.HandleCount, Win.GetGuiResources(process.Handle, 0), Win.GetGuiResources(process.Handle, 1)), MonitorJson.Default.SoakSample));
-            }
-            await writer.WriteLineAsync(JsonSerializer.Serialize(new SoakResult(trend.Stable == false ? "failed" : "complete", clock.Elapsed.TotalSeconds, success, failures, trend.Stable, trend.Growth), MonitorJson.Default.SoakResult));
-            if (args[0] == "--timeline-soak") Win.PostMessage(hwnd, 0x10, IntPtr.Zero, IntPtr.Zero);
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception error) { Diagnostics.Write(root, "soak-failed", error); }
-    }
-    void NativeTest()
-    {
-        if (success < 3 || testPhase > 1)
-            return;
-        var output = args[1];
-        Directory.CreateDirectory(output);
-        if (testPhase == 0)
-        {
-            testPhase = 1;
-            canvas.Render(Volatile.Read(ref frame), config, mini);
-            canvas.SaveBitmap(Path.Combine(output, "native-detail.bmp"));
-            using var process = Process.GetCurrentProcess();
-            uint gdiStart = Win.GetGuiResources(process.Handle, 0);
-            int assertions = VerifyViewportForTest(output);
-            if (!Win.Shell_NotifyIcon(2, ref icon)) throw new Exception("Could not remove the test tray icon.");
-            trayReady = false;
-            icon.Flags = 4;
-            Win.SendMessage(hwnd, taskbarCreated, IntPtr.Zero, IntPtr.Zero);
-            if (!trayReady || icon.Flags != 7) throw new Exception("TaskbarCreated did not restore the tray icon and callback.");
-            assertions++;
-            for (int i = 0; i < 10000; i++)
-                canvas.Render(Volatile.Read(ref frame), config, mini, i % 4);
-            if (Win.GetGuiResources(process.Handle, 0) > gdiStart + 2)
-                throw new Exception(Strings.T("绘制时 GDI 对象增长"));
-            assertions++;
-            config.MiniMode = true;
-            config.AutoExpand = false;
-            compact.Reset();
-            RefreshMode();
-            ApplyGeometry();
-            canvas.Render(Volatile.Read(ref frame), config, mini);
-            canvas.SaveBitmap(Path.Combine(output, "native-mini.bmp"));
-            foreach (int corner in new[] { 0, 1, 2, 3 })
-            {
-                config.Corner = corner;
-                ApplyGeometry();
-                Win.GetWindowRect(hwnd, out var r);
-                var screen = CurrentScreen(false);
-                if (r.Left < screen.Work.Left || r.Top < screen.Work.Top || r.Right > screen.Work.Right || r.Bottom > screen.Work.Bottom)
-                    throw new Exception(Strings.T("窗口越过工作区"));
-                assertions++;
-            }
-            for (int i = 0; i < 100; i++)
-            {
-                config.UiScale = i % 2 == 0 ? 0.8 : 1.25;
-                config.MiniMode = i % 3 == 0;
-                compact.Reset();
-                RefreshMode();
-                ApplyGeometry();
-                canvas.Render(Volatile.Read(ref frame), config, mini);
-            }
-            if (Win.GetGuiResources(process.Handle, 0) > gdiStart + 5)
-                throw new Exception(Strings.T("缩放/调整缓冲区时 GDI 对象增长"));
-            assertions++;
-            var themeCounts=new System.Collections.Generic.List<uint>();
-            uint beforeThemes=Win.GetGuiResources(process.Handle,0);
-            for(int i=0;i<100;i++)
-            {
-                config.ColorMode=i%2==0?"light":"dark";
-                canvas.Render(Volatile.Read(ref frame),config,mini);
-                themeCounts.Add(Win.GetGuiResources(process.Handle,0));
-            }
-            File.WriteAllText(Path.Combine(output,"theme-gdi.txt"),"before="+beforeThemes+" cycles="+string.Join(",",themeCounts));
-            if(themeCounts.Skip(2).Any(count=>count!=themeCounts[1])) throw new Exception("Theme switch leaked GDI resources after palette warmup.");
-            assertions++;
-            config.MiniMode=false; compact.Reset(); RefreshMode(); ApplyGeometry();
-            foreach(string mode in new[]{"light","dark"})
-            {
-                config.ColorMode=mode; canvas.Render(Volatile.Read(ref frame),config,mini);
-                canvas.SaveBitmap(Path.Combine(output,"native-theme-"+mode+".bmp"));
-            }
-            config.ColorMode="system";
-            config.UiScale = 1;
-            config.MiniMode = false;
-            config.Locked = true;
-            config.LockClickThrough = true;
-            ApplyGeometry();
-            if ((Win.GetStyle(hwnd, -20) & 0x20) == 0 || unlockWindow == IntPtr.Zero)
-                throw new Exception(Strings.T("锁定穿透或解锁热点失败"));
-            assertions++;
-            Win.GetWindowRect(hwnd, out var ownerBefore);
-            Win.GetWindowRect(unlockWindow, out var hotspotBefore);
-            Win.SetWindowPos(hwnd, IntPtr.Zero, ownerBefore.Left + 7, ownerBefore.Top + 5, 0, 0, 0x0015);
-            Win.GetWindowRect(unlockWindow, out var hotspotAfter);
-            if (hotspotAfter.Left - hotspotBefore.Left != 7 || hotspotAfter.Top - hotspotBefore.Top != 5)
-                throw new Exception("System move left the unlock hotspot behind.");
-            assertions++;
-            Win.SendMessage(unlockWindow, 0x0200, IntPtr.Zero, IntPtr.Zero);
-            if (hoverButton != 2) throw new Exception(Strings.T("解锁热点悬停反馈失败"));
-            assertions++;
-            Win.SendMessage(unlockWindow, 0x02A3, IntPtr.Zero, IntPtr.Zero);
-            if (hoverButton != -1) throw new Exception(Strings.T("解锁热点悬停未清除"));
-            assertions++;
-            Win.SendMessage(unlockWindow, 0x0201, IntPtr.Zero, IntPtr.Zero);
-            if (config.Locked || unlockWindow != IntPtr.Zero)
-                throw new Exception(Strings.T("再次点击解锁失败"));
-            assertions++;
-            config.AlwaysOnTop = false;
-            ApplyGeometry();
-            if ((Win.GetStyle(hwnd, -20) & 8) != 0)
-                throw new Exception(Strings.T("取消置顶失败"));
-            assertions++;
-            config.AlwaysOnTop = true;
-            ApplyGeometry();
-            if ((Win.GetStyle(hwnd, -20) & 8) == 0)
-                throw new Exception(Strings.T("启用置顶失败"));
-            assertions++;
-            var currentScreen = CurrentScreen(false);
-            config.MiniMode = true;
-            config.MiniDockCorner = false;
-            config.MiniHasAnchor = true;
-            config.MiniMonitorName = currentScreen.Name;
-            config.MiniAnchorX = 0.37;
-            config.MiniAnchorY = 0.43;
-            compact.Reset();
-            RefreshMode();
-            ApplyGeometry();
-            Win.GetWindowRect(hwnd, out var freelyPlaced);
-            double expectedX = currentScreen.Work.Left + 0.37 * (currentScreen.Work.Right - currentScreen.Work.Left - (freelyPlaced.Right - freelyPlaced.Left));
-            if (Math.Abs(freelyPlaced.Left - expectedX) > 2)
-                throw new Exception(Strings.T("迷你窗自由位置失败"));
-            assertions++;
-            var moving = new Win.Rect { Left = currentScreen.Work.Left + 5, Top = currentScreen.Work.Top + 5, Right = currentScreen.Work.Left + 5 + pixelWidth, Bottom = currentScreen.Work.Top + 5 + pixelHeight };
-            var movingPointer = Marshal.AllocHGlobal(Marshal.SizeOf<Win.Rect>());
-            try
-            {
-                Marshal.StructureToPtr(moving, movingPointer, false);
-                dragging = true;
-                dragScreens = Screens();
-                Win.SendMessage(hwnd, 0x0216, IntPtr.Zero, movingPointer);
-                var snapped = Marshal.PtrToStructure<Win.Rect>(movingPointer);
-                if (snapped.Left != currentScreen.Work.Left || snapped.Top != currentScreen.Work.Top)
-                    throw new Exception(Strings.T("原生移动吸附失败"));
-                assertions++;
-            }
-            finally { dragging = false; dragScreens = null; Marshal.FreeHGlobal(movingPointer); }
-            foreach (bool small in new[] { false, true })
-            {
-                config.MiniMode = small;
-                config.AutoExpand = false;
-                config.SnapToEdges = false;
-                config.Locked = false;
-                compact.Reset();
-                RefreshMode();
-                ApplyGeometry();
-                config.Save(ConfigPath);
-                Win.GetWindowRect(hwnd, out var origin);
-                BeginPointerDrag(new Win.Point { X = origin.Left + 20, Y = origin.Top + 20 });
-                if (Win.GetCapture() != hwnd)
-                    throw new Exception(Strings.T("拖动没有捕获鼠标"));
-                assertions++;
-                MovePointerDrag(new Win.Point { X = origin.Left + 87, Y = origin.Top + 61 });
-                Win.GetWindowRect(hwnd, out var moved);
-                if (moved.Left != origin.Left + 67 || moved.Top != origin.Top + 41)
-                    throw new Exception(Strings.T("鼠标拖动没有移动窗口"));
-                assertions++;
-                EndPointerDrag(true);
-                if (dragArmed || Win.GetCapture() == hwnd)
-                    throw new Exception(Strings.T("松手没有释放捕获"));
-                assertions++;
-                if (small && !config.MiniHasAnchor || !small && !config.HasAnchor)
-                    throw new Exception(Strings.T("拖动没有记住位置"));
-                assertions++;
-            }
-            config.SnapToEdges = true;
-            config.MiniMode = false;
-            config.Locked = true;
-            ApplyGeometry();
-            canvas.Render(Volatile.Read(ref frame), config, mini);
-            canvas.SaveBitmap(Path.Combine(output, "native-locked.bmp"));
-            config.Locked = false;
-            ApplyGeometry();
-            int logicalWidth = (int)Math.Round(pixelWidth / drawScale);
-            for (int button = 0; button < 4; button++)
-            {
-                int x = (int)((logicalWidth - 79 + button * 22) * drawScale);
-                int y = (int)(14 * drawScale);
-                Win.SendMessage(hwnd, 0x0200, IntPtr.Zero, new IntPtr((x & 0xffff) | (y << 16)));
-                if (hoverButton != button) throw new Exception(Strings.T("顶部按钮悬停区未对齐"));
-                assertions++;
-            }
-            Win.SendMessage(hwnd, 0x02A3, IntPtr.Zero, IntPtr.Zero);
-            if (hoverButton != -1) throw new Exception(Strings.T("顶部按钮悬停未清除"));
-            assertions++;
-            canvas.Render(Volatile.Read(ref frame), config, mini);
-            canvas.SaveBitmap(Path.Combine(output, "native-detail.bmp"));
-            int heightBefore = pixelHeight;
-            config.ShowQuotaForecast = true;
-            config.QuotaUpdatedUtc = DateTime.UtcNow;
-            config.QuotaGB = 48;
-            ApplyGeometry();
-            if (Math.Abs(pixelHeight - heightBefore - 19 * drawScale) > 1) throw new Exception($"Quota row height was not reserved: before={heightBefore}, after={pixelHeight}, scale={drawScale}, ui={config.UiScale}, node={config.ShowNodeLatency}, drag={dragArmed}/{dragging}.");
-            assertions++;
-            var preview = Volatile.Read(ref frame) with { QuotaText = Strings.Format("预计可用 · {0}", new QuotaForecast(48_000_000_000, 1_000_000_000, 7).DurationText) };
-            canvas.Render(preview, config, mini);
-            canvas.SaveBitmap(Path.Combine(output, "native-quota.bmp"));
-            uint quotaGdi = Win.GetGuiResources(process.Handle, 0);
-            for (int i = 0; i < 10000; i++) canvas.Render(preview, config, mini);
-            if (Win.GetGuiResources(process.Handle, 0) != quotaGdi) throw new Exception("Quota painting retained GDI resources.");
-            assertions++;
-            config.MiniMode = true; compact.Reset(); RefreshMode(); ApplyGeometry();
-            if (pixelHeight != (int)Math.Round(58 * drawScale)) throw new Exception("Quota changed mini mode size.");
-            assertions++;
-            config.MiniMode = false; config.ShowQuotaForecast = false; config.QuotaUpdatedUtc = default;
-            compact.Reset(); RefreshMode(); ApplyGeometry();
-            config.Visible = false;
-            ApplyVisibility();
-            OpenSettings(true);
-            File.WriteAllText(Path.Combine(output, "native-test.txt"), $"PASS: {assertions} assertions, direct mouse drag in both modes, capture/release and saved position, 10000 paints, 100 resize/mode cycles, four corners; GDI start={gdiStart}, end={Win.GetGuiResources(process.Handle, 0)}\n");
-        }
-        else if (watch.Elapsed.TotalSeconds - settingsStarted > 20)
-        {
-            testPhase = 2;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-                    while (settingsProcess != null && !settingsProcess.HasExited)
-                    {
-                        settingsProcess.Refresh();
-                        if (settingsProcess.MainWindowHandle != IntPtr.Zero)
-                            settingsProcess.CloseMainWindow();
-                        await Task.Delay(250, timeout.Token);
-                    }
-                    File.AppendAllText(Path.Combine(output, "native-test.txt"), "PASS: settings process exited after window close\n");
-                }
-                catch (Exception ex) { File.AppendAllText(Path.Combine(output, "native-test.txt"), "FAIL: settings exit: " + ex.Message + "\n"); try { if (settingsProcess != null && !settingsProcess.HasExited) { settingsProcess.Kill(); await settingsProcess.WaitForExitAsync(); } } catch { } }
-                finally { Win.PostMessage(hwnd, 0x10, IntPtr.Zero, IntPtr.Zero); }
-            });
-        }
+#endif
+        settingsProcess = Process.Start(new ProcessStartInfo(executable, options) { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory });
     }
     void Close(string reason = "window-close")
     {
@@ -1166,6 +1012,10 @@ public static class Entry
     [STAThread]
     public static void Main(string[] args)
     {
+        bool verifying = args.Length > 0 && args[0] is "--native-test" or "--timeline-soak" or "--soak";
+#if !TRAFFIC_LENS_VERIFICATION
+        if (verifying) { Environment.ExitCode = 1; return; }
+#endif
         string suffix = args.Length == 0 ? "" : args[0] switch { "--native-test" => ".NativeTest", "--timeline-soak" => ".TimelineSoak", _ => "" };
         string name = @"Local\ProxyTrafficFloat.User." + Environment.UserName + suffix;
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + ".Activate");
@@ -1178,7 +1028,8 @@ public static class Entry
         catch (AbandonedMutexException) { owns = true; }
         if (!owns)
         {
-            activate.Set();
+            if (verifying) Environment.ExitCode = 1;
+            else activate.Set();
             return;
         }
         try

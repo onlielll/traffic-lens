@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -272,6 +273,8 @@ public sealed partial class SettingsWindow : Window
     ComboBox? languagePicker;
     int currentPage, transitionVersion;
     DateTime lastStats = DateTime.MinValue;
+    Task? rowsReadTask;
+    int rowsReadVersion;
     TimelinePanel? timeline;
     QuotaPanel? quota;
     AppearancePicker? appearance;
@@ -670,7 +673,7 @@ public sealed partial class SettingsWindow : Window
         var history = Section("时间线");
         Toggle(history, "记录流量时间线", "逐秒保存 · 最近 24 小时",
             () => app.Config.RecordTimeline, value => { app.Config.RecordTimeline = value; timeline?.Refresh(true); }, false);
-        timeline = new TimelinePanel(app, Changed);
+        timeline = new TimelinePanel(app, Changed, featureStop.Token);
         history.Children.Add(timeline);
         timelineView.Children.Add(Ui.Card(history));
         page.Children.Add(rankingView);
@@ -710,8 +713,7 @@ public sealed partial class SettingsWindow : Window
         timelineView.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         for (int i = 0; i < statisticsTabs.Count; i++)
             statisticsTabs[i].Foreground = i == index ? Ui.Text : Ui.Muted;
-        if (index == 1)
-            timeline?.Refresh(true);
+        RefreshRows();
         if (moved && IsLoaded)
         {
             ((SmoothScrollViewer)pages[2]).StopMotion();
@@ -969,123 +971,12 @@ public sealed partial class SettingsWindow : Window
             RefreshRows();
     }
 
-    public async System.Threading.Tasks.Task VerifyNavigationAsync(string output)
-    {
-        SelectPage(2);
-        await System.Threading.Tasks.Task.Delay(300);
-        SelectPage(0);
-        await System.Threading.Tasks.Task.Delay(300);
-        double start = navigationPosition.Y;
-        SelectPage(2);
-        await System.Threading.Tasks.Task.Delay(70);
-        double middle = navigationPosition.Y;
-        await System.Threading.Tasks.Task.Delay(230);
-        double end = navigationPosition.Y;
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "navigation-test.txt"), $"start={start:0.###}, middle={middle:0.###}, end={end:0.###}, systemAnimation={SystemParameters.ClientAreaAnimation}\n");
-        if (SystemParameters.ClientAreaAnimation && (middle <= start || middle >= end || Math.Abs(end - 100) > 0.1))
-            throw new InvalidOperationException("Navigation did not slide to the selected page.");
-        for (int i = 0; i < 80; i++)
-            SelectPage(i % 4);
-        await System.Threading.Tasks.Task.Delay(260);
-        if (pages.Count(p => p.Visibility == Visibility.Visible) != 1 || pages.Any(p => p.HasAnimatedProperties) || navigationPosition.HasAnimatedProperties)
-            throw new InvalidOperationException("Navigation retained transition clocks.");
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "navigation-test.txt"), $"PASS: start={start:0.#}, middle={middle:0.#}, end={end:0.#}; rapid navigation ends with one page and no live animation clocks\n");
-        SelectPage(0);
-        await System.Threading.Tasks.Task.Delay(260);
-    }
-    public async System.Threading.Tasks.Task VerifyStatisticsForTest(string output)
-    {
-        SelectPage(2);
-        SelectStatisticsView(0, false);
-        await System.Threading.Tasks.Task.Delay(260);
-        if (rankingView.Visibility != Visibility.Visible || timelineView.Visibility != Visibility.Collapsed)
-            throw new InvalidOperationException("Usage and timeline views overlap.");
-        if (rows.Items.Count == 0)
-            throw new InvalidOperationException("Usage examples missing.");
-        var clickedRow = (ListViewItem)rows.ItemContainerGenerator.ContainerFromIndex(0)!;
-        rows.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-        {
-            RoutedEvent = PreviewMouseLeftButtonUpEvent,
-            Source = clickedRow
-        });
-        await System.Threading.Tasks.Task.Delay(220);
-        if (rankingView.Visibility != Visibility.Collapsed || timelineView.Visibility != Visibility.Visible || timeline!.SelectedTargetForTest != ((UsageRow)rows.Items[0]).Target)
-            throw new InvalidOperationException("Target drill-in failed.");
-        SelectStatisticsView(0, false);
-        rows.SelectedIndex = 0;
-        RefreshRows();
-        if (rows.SelectedItem is not UsageRow selectedRow)
-            throw new InvalidOperationException("Refresh lost keyboard selection.");
-        rows.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(rows), Environment.TickCount, Key.Enter)
-        {
-            RoutedEvent = Keyboard.KeyDownEvent
-        });
-        if (statisticsView != 1 || timeline!.SelectedTargetForTest != selectedRow.Target)
-            throw new InvalidOperationException("Keyboard target drill-in failed.");
-        await timeline.VerifyWheelForTest(output);
-        for (int i = 0; i < 100; i++)
-            SelectStatisticsView(i % 2, false);
-        SelectStatisticsView(0, false);
-        await System.Threading.Tasks.Task.Delay(80);
-        if (rankingView.Visibility != Visibility.Visible || timelineView.Visibility != Visibility.Collapsed || statisticsPosition.HasAnimatedProperties)
-            throw new InvalidOperationException("Repeated statistics switching retained transitions.");
-        var card = (Border)((Grid)rows.Parent).Parent;
-        if (card.Clip is not RectangleGeometry clip || clip.RadiusX != 16 || clip.Rect.Size != card.RenderSize || card.Padding.Left < 6)
-            throw new InvalidOperationException("Table card does not clip and inset its content.");
-        var container = (ListViewItem)rows.ItemContainerGenerator.ContainerFromIndex(0)!;
-        container.ApplyTemplate();
-        if (container.Template.FindName("Row", container) is not Border row || row.CornerRadius.TopLeft < 8 || row.Margin.Left < 4)
-            throw new InvalidOperationException("Table row highlight is not rounded.");
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "statistics-ui-test.txt"), "PASS: usage view first, single visible view, routed mouse/Enter target drill-in, keyboard selection survives refresh, 100 switches without retained clocks, clipped/inset card and rounded rows\n");
-    }
-
-    public void PrepareQuotaForTest()
-    {
-        const long GB = 1_000_000_000;
-        for (int i = 1; i <= 7; i++) app.Store.Add(new[] { new Increment(DateTime.Today.AddDays(-i), "downloads.example", GB * 3 / 4, GB / 4) });
-        app.Config.QuotaGB = 48;
-        app.Config.QuotaBaselineBytes = app.Store.ObservedBytes();
-        app.Config.QuotaUpdatedUtc = DateTime.UtcNow;
-        app.Config.ShowQuotaForecast = true;
-        app.Save();
-        quota!.Refresh(true);
-    }
-
-    public void VerifyReuseForTest(string output)
-    {
-        SelectPage(2); SelectStatisticsView(0, false); RefreshRows();
-        var entries = rows.ItemsSource;
-        RefreshRows();
-        if (!ReferenceEquals(entries, rows.ItemsSource)) throw new InvalidOperationException("Unchanged ranking rebuilt its containers.");
-        var theme = Resources.MergedDictionaries.Single();
-        for (int i = 0; i < 100; i++) SetTheme(i % 2 == 0 ? "light" : "dark");
-        if (!ReferenceEquals(theme, Resources.MergedDictionaries.Single())) throw new InvalidOperationException("Theme switch rebuilt styles.");
-        quota!.VerifyCommitForTest();
-        quota.Refresh(true);
-        if (quota.DurationForTest != Strings.Format("约 {0:0} 天", 48)) throw new InvalidOperationException("Quota estimate was not shown.");
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "reuse-quota-test.txt"), "PASS: ranking source reused, 100 theme switches reuse styles, quota input/validation/subtraction and recorded-days forecast\n");
-    }
-
-    public void ShowQuotaForTest()
-    {
-        SelectPage(2); SelectStatisticsView(0, false);
-        quota!.BringIntoView();
-    }
-
-    public void OpenAppearanceForTest() => appearance?.OpenForTest();
-    public void CloseAppearanceForTest() => appearance?.CloseForTest();
-    public UIElement? AppearancePreviewForTest => appearance?.PreviewForTest;
     public void ShowTimeline()
     {
         SelectStatisticsView(1, false);
         ((SmoothScrollViewer)pages[2]).StopMotion();
         ((ScrollViewer)pages[2]).ScrollToTop();
     }
-    public void VerifyTimelineForTest(string output) => timeline?.VerifyForTest(output);
-    public void PreviewTimelineForTest() => timeline?.PreviewForTest();
-    public void PreviewLowTrafficForTest(bool detail) => timeline?.PreviewLowTrafficForTest(detail);
-    public string TimelineLayoutForTest => timeline?.LayoutForTest ?? "";
-
     public void ScrollCurrentToEnd()
     {
         foreach (var page in pages)
@@ -1096,7 +987,6 @@ public sealed partial class SettingsWindow : Window
             }
     }
 
-    public bool HasPendingChanges => pendingSave;
 
     void Changed()
     {
@@ -1269,63 +1159,68 @@ public sealed partial class SettingsWindow : Window
 
     void RefreshRows()
     {
-        if (rows.View == null)
+        if (rows.View == null || featureStop.IsCancellationRequested)
             return;
-        try
-        {
-            if (statisticsView == 1)
-            {
-                timeline?.UpdateTargets(app.Store.Query(DateTime.Today.AddDays(-6), DateTime.Today));
-                timeline?.Refresh(true);
-                lastStats = DateTime.UtcNow;
-                return;
-            }
-            var data = app.Store.Query(DateTime.Today.AddDays(range.SelectedIndex == 1 ? -6 : 0), DateTime.Today);
-            total.Text = $"↓ {Display.Bytes(data.Sum(row => row.Download))}    ↑ {Display.Bytes(data.Sum(row => row.Upload))}";
-            IEnumerable<DailyRow> ordered = sort.SelectedIndex switch
-            {
-                1 => data.OrderByDescending(row => row.Download),
-                2 => data.OrderByDescending(row => row.Upload),
-                _ => data
-            };
-            string? selected = (rows.SelectedItem as UsageRow)?.Target;
-            var entries = ordered.Select(row => new UsageRow(row.Target, Display.Bytes(row.Download), Display.Bytes(row.Upload))).ToList();
-            if (rows.ItemsSource is not List<UsageRow> previous || !previous.SequenceEqual(entries))
-                rows.ItemsSource = entries;
-            else
-                entries = previous; // Keep containers and selection when displayed values have not changed.
-            rows.SelectedItem = entries.FirstOrDefault(row => row.Target == selected);
-            rows.Height = Math.Clamp(entries.Count * 44 + 46, 140, 280);
-            emptyRows.Visibility = rows.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            quota?.Refresh();
-            lastStats = DateTime.UtcNow;
-        }
-        catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)
-        {
-            total.Text = Strings.T("记录读取失败");
-            Diagnostics.Write(app.DataDirectory, "statistics-read", error);
-        }
+        rowsReadVersion++;
+        lastStats = DateTime.UtcNow;
+        if (statisticsView == 1)
+            timeline?.Refresh(true);
+        if (rowsReadTask is not { IsCompleted: false })
+            rowsReadTask = ReadRowsAsync();
     }
 
-    public async System.Threading.Tasks.Task CheckToggleAnimationAsync(string output)
+    async Task ReadRowsAsync()
     {
-        SelectPage(0);
-        var toggle = checks[0].Box;
-        toggle.ApplyTemplate();
-        var knob = (TranslateTransform)toggle.Template.FindName("KnobPosition", toggle);
-        bool original = toggle.IsChecked == true;
-        await System.Threading.Tasks.Task.Delay(220);
-        double start = knob.X;
-        toggle.IsChecked = !original;
-        await System.Threading.Tasks.Task.Delay(70);
-        double middle = knob.X;
-        await System.Threading.Tasks.Task.Delay(180);
-        double end = knob.X;
-        toggle.IsChecked = original;
-        await System.Threading.Tasks.Task.Delay(200);
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "toggle-animation.txt"),
-            $"PASS: start={start:0.###}, mid={middle:0.###}, end={end:0.###}; 160 ms transition\n");
-        if (middle <= 0 || middle >= 16 || Math.Abs(start - end) < 15)
-            throw new InvalidOperationException("Toggle animation did not interpolate between endpoints.");
+        int version;
+        do
+        {
+            version = rowsReadVersion;
+            int view = statisticsView, order = sort.SelectedIndex;
+            bool hasQuota = app.Config.HasQuota;
+            DateTime last = DateTime.Today, first = last.AddDays(view == 1 || range.SelectedIndex == 1 ? -6 : 0);
+            try
+            {
+                var result = await Task.Run(() =>
+                {
+                    using var store = TrafficStore.OpenReadOnly(System.IO.Path.Combine(app.DataDirectory, "traffic.sqlite"), featureStop.Token);
+                    var data = store.Query(first, last);
+                    featureStop.Token.ThrowIfCancellationRequested();
+                    if (view == 1) return (Data: data, Entries: (List<UsageRow>?)null, Down: 0L, Up: 0L, Observed: (long?)null, Trend: (UsageTrend?)null);
+                    long download = 0, upload = 0;
+                    foreach (var row in data) { download = checked(download + row.Download); upload = checked(upload + row.Upload); }
+                    if (order == 1) data.Sort((a, b) => b.Download.CompareTo(a.Download));
+                    if (order == 2) data.Sort((a, b) => b.Upload.CompareTo(a.Upload));
+                    var entries = new List<UsageRow>(data.Count);
+                    foreach (var row in data) entries.Add(new(row.Target, Display.Bytes(row.Download), Display.Bytes(row.Upload)));
+                    return (Data: data, Entries: (List<UsageRow>?)entries, Down: download, Up: upload, Observed: hasQuota ? (long?)store.ObservedBytes() : null, Trend: hasQuota ? (UsageTrend?)store.RecentDailyTrend(last) : null);
+                }, featureStop.Token);
+                if (featureStop.IsCancellationRequested) return;
+                if (version != rowsReadVersion) continue;
+                if (view == 1)
+                    timeline?.UpdateTargets(result.Data);
+                else
+                {
+                    total.Text = $"↓ {Display.Bytes(result.Down)}    ↑ {Display.Bytes(result.Up)}";
+                    string? selected = (rows.SelectedItem as UsageRow)?.Target;
+                    var entries = result.Entries!;
+                    if (rows.ItemsSource is not List<UsageRow> previous || !previous.SequenceEqual(entries))
+                        rows.ItemsSource = entries;
+                    else
+                        entries = previous;
+                    rows.SelectedItem = entries.FirstOrDefault(row => row.Target == selected);
+                    rows.Height = Math.Clamp(entries.Count * 44 + 46, 140, 280);
+                    emptyRows.Visibility = rows.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                    quota?.Refresh(observed: result.Observed, dailyTrend: result.Trend);
+                }
+            }
+            catch (OperationCanceledException) when (featureStop.IsCancellationRequested) { return; }
+            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)
+            {
+                if (featureStop.IsCancellationRequested) return;
+                if (version != rowsReadVersion) continue;
+                total.Text = Strings.T("记录读取失败");
+                Diagnostics.Write(app.DataDirectory, "statistics-read", error);
+            }
+        } while (!featureStop.IsCancellationRequested && version != rowsReadVersion);
     }
 }

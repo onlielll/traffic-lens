@@ -29,7 +29,7 @@ public static class ReleaseCheck
 
     public static async Task<ReleaseInfo?> FetchAsync(bool previews, CancellationToken cancellation)
     {
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12), MaxResponseContentBufferSize = 1024 * 1024 };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("TrafficLens-UpdateCheck");
         return Parse(await client.GetStringAsync("https://api.github.com/repos/onlielll/traffic-lens/releases?per_page=20", cancellation), previews);
     }

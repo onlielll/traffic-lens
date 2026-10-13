@@ -69,7 +69,6 @@ public static partial class Win
     [DllImport("user32.dll")] public static extern bool InvalidateRect(IntPtr hwnd, IntPtr rect, bool erase);
     [DllImport("user32.dll")] public static extern IntPtr BeginPaint(IntPtr hwnd, out Paint paint);
     [DllImport("user32.dll")] public static extern bool EndPaint(IntPtr hwnd, ref Paint paint);
-    [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint key, byte alpha, uint flags);
@@ -88,7 +87,6 @@ public static partial class Win
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool AppendMenu(IntPtr menu, uint flags, UIntPtr id, string text);
     [DllImport("user32.dll")] public static extern uint TrackPopupMenu(IntPtr menu, uint flags, int x, int y, int reserved, IntPtr hwnd, IntPtr rect);
     [DllImport("user32.dll")] public static extern bool DestroyMenu(IntPtr menu);
-    [DllImport("user32.dll")] public static extern IntPtr LoadIcon(IntPtr instance, IntPtr name);
     [DllImport("user32.dll")] public static extern IntPtr CreateIconFromResourceEx(byte[] data, uint size, bool icon, uint version, int width, int height, uint flags);
     [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr icon);
     [DllImport("user32.dll")] public static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
@@ -109,7 +107,6 @@ public static partial class Win
     [DllImport("gdi32.dll")] public static extern IntPtr CreateSolidBrush(uint color);
     [DllImport("gdi32.dll")] public static extern IntPtr CreatePen(int style, int width, uint color);
     [DllImport("gdi32.dll")] public static extern bool Polyline(IntPtr dc, Point[] points, int count);
-    [DllImport("gdi32.dll")] public static extern uint SetDCPenColor(IntPtr dc, uint color);
     [DllImport("gdi32.dll")] public static extern bool RoundRect(IntPtr dc, int left, int top, int right, int bottom, int ellipseW, int ellipseH);
     [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
     [DllImport("user32.dll")] public static extern int FillRect(IntPtr dc, ref Rect rect, IntPtr brush);

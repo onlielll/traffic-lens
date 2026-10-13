@@ -13,6 +13,7 @@ public sealed partial class SettingsWindow
 {
     readonly CancellationTokenSource featureStop = new();
     Task? dataTask;
+    bool closingReads;
     NodeStatusPanel? nodePanel;
     ReleaseInfo? availableRelease;
     TextBlock? updateStatus;
@@ -57,7 +58,7 @@ public sealed partial class SettingsWindow
                 buttons.IsEnabled = false;
                 status.Text = Strings.T("正在保存…");
                 string database = Path.Combine(app.DataDirectory, "traffic.sqlite");
-                dataTask = Task.Run(() => { featureStop.Token.ThrowIfCancellationRequested(); using var store = new TrafficStore(database); action(store, dialog.FileName); }, featureStop.Token);
+                dataTask = Task.Run(() => { featureStop.Token.ThrowIfCancellationRequested(); using var store = TrafficStore.OpenReadOnly(database, featureStop.Token); action(store, dialog.FileName); }, featureStop.Token);
                 try { await dataTask; status.Text = Strings.T("已保存"); }
                 catch (OperationCanceledException) { status.Text = ""; }
                 catch (IOException error) { status.Text = Strings.T("保存失败，请重试。"); Diagnostics.Write(app.DataDirectory, "data-export", error); }
@@ -108,10 +109,14 @@ public sealed partial class SettingsWindow
 
     async void FinishDataBeforeClose(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (dataTask is not { IsCompleted: false }) return;
+        if (closingReads) { e.Cancel = true; return; }
+        if (dataTask is not { IsCompleted: false } && rowsReadTask is not { IsCompleted: false } && timeline?.PendingRead is not { IsCompleted: false }) return;
         e.Cancel = true;
+        closingReads = true;
         featureStop.Cancel();
-        try { await dataTask; } catch (Exception error) when (error is OperationCanceledException or IOException or UnauthorizedAccessException) { }
+        try { await Task.WhenAll(dataTask ?? Task.CompletedTask, rowsReadTask ?? Task.CompletedTask, timeline?.PendingRead ?? Task.CompletedTask); }
+        catch (Exception error) when (error is OperationCanceledException or IOException or UnauthorizedAccessException) { }
+        closingReads = false;
         Close();
     }
 }

@@ -10,16 +10,24 @@ $taskRoot = Split-Path -Parent $PSScriptRoot
 $taskPublished = Join-Path $taskRoot ".build\publish\$Runtime"
 $taskOutput = Join-Path $taskRoot 'dist'
 $taskName = "TrafficLens-$Version-$Runtime"
-$taskProject = [xml](Get-Content -LiteralPath (Join-Path $taskRoot 'native\Native.csproj') -Raw)
-if ($taskProject.Project.PropertyGroup.Version -ne $Version) {
-    throw "Package version $Version differs from native\Native.csproj. Keep binaries, tags and package names aligned."
+foreach ($taskProjectPath in @('native\Native.csproj', 'src\ProxyTrafficFloat.csproj')) {
+    $taskProject = [xml](Get-Content -LiteralPath (Join-Path $taskRoot $taskProjectPath) -Raw)
+    if ($taskProject.Project.PropertyGroup.Version -ne $Version) {
+        throw "Package version $Version differs from $taskProjectPath. Keep binaries, tags and package names aligned."
+    }
 }
 
 # Validate the complete merged, self-contained folder before publishing a package.
-foreach ($taskFile in @('ProxyTrafficFloat.exe', 'ProxyTrafficSettings.exe',
+foreach ($taskFile in @('ProxyTrafficFloat.exe', 'ProxyTrafficSettings.exe', 'ProxyTrafficFloat.dll', 'ProxyTrafficSettings.dll',
     'coreclr.dll', 'hostfxr.dll', 'System.Private.CoreLib.dll', 'PresentationFramework.dll')) {
     if (-not (Test-Path -LiteralPath (Join-Path $taskPublished $taskFile))) {
         throw "Incomplete publish output: $taskFile. Run build.ps1 -Runtime $Runtime first."
+    }
+}
+foreach ($taskAppDll in @('ProxyTrafficFloat.dll', 'ProxyTrafficSettings.dll')) {
+    $taskBinaryVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $taskPublished $taskAppDll)).ProductVersion
+    if (-not $taskBinaryVersion -or $taskBinaryVersion.Split('+')[0] -ne $Version) {
+        throw "Published $taskAppDll version $taskBinaryVersion differs from package version $Version. Run build.ps1 -Runtime $Runtime first."
     }
 }
 New-Item -ItemType Directory -Force -Path $taskOutput | Out-Null
@@ -33,7 +41,8 @@ $taskDocs = Join-Path $taskPublished 'docs'
 New-Item -ItemType Directory -Force -Path $taskDocs | Out-Null
 Copy-Item -LiteralPath (Join-Path $taskRoot 'docs\VALIDATION.md') -Destination $taskDocs -Force
 Copy-Item -LiteralPath (Join-Path $taskRoot 'docs\images') -Destination $taskDocs -Recurse -Force
-foreach ($taskInternalDocument in @('FIRST-GITHUB-UPLOAD.md', 'LICENSE-OPTIONS.md', 'REPOSITORY-INTRO.md')) {
+$taskInternalDocuments = @('FIRST-GITHUB-UPLOAD.md', 'LICENSE-OPTIONS.md', 'REPOSITORY-INTRO.md')
+foreach ($taskInternalDocument in $taskInternalDocuments) {
     $taskStaleDocument = Join-Path $taskDocs $taskInternalDocument
     if (Test-Path -LiteralPath $taskStaleDocument) { Remove-Item -LiteralPath $taskStaleDocument -Force }
 }
@@ -71,7 +80,7 @@ if ($IncludeSource) {
         $taskDirectoryPath = Join-Path $taskRoot $taskDirectory
         if (-not (Test-Path -LiteralPath $taskDirectoryPath)) { continue }
         Get-ChildItem -LiteralPath $taskDirectoryPath -Recurse -File | Where-Object {
-            $_.FullName -notmatch '[\\/](bin|obj)[\\/]' -and ($taskExtensions -contains $_.Extension.ToLowerInvariant() -or $_.Name -eq 'LICENSE')
+            $_.Name -notin $taskInternalDocuments -and $_.FullName -notmatch '[\\/](bin|obj)[\\/]' -and ($taskExtensions -contains $_.Extension.ToLowerInvariant() -or $_.Name -eq 'LICENSE')
         } | ForEach-Object {
             $taskRelative = $_.FullName.Substring($taskRoot.Length + 1)
             $taskDestination = Join-Path $taskSourceOutput $taskRelative
@@ -93,5 +102,5 @@ $taskChecksums = foreach ($taskPackage in $taskPackages) {
     $taskHash = Get-FileHash -LiteralPath (Join-Path $taskOutput $taskPackage) -Algorithm SHA256
     '{0}  {1}' -f $taskHash.Hash.ToLowerInvariant(), $taskPackage
 }
-$taskChecksums | Set-Content -LiteralPath (Join-Path $taskOutput "$taskName-SHA256SUMS.txt") -Encoding ascii
+[IO.File]::WriteAllText((Join-Path $taskOutput "$taskName-SHA256SUMS.txt"), ($taskChecksums -join "`n") + "`n", [Text.Encoding]::ASCII)
 Write-Host "Packages ready: $taskOutput"

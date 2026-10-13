@@ -18,7 +18,7 @@
     <RuntimeHostConfigurationOption Include="System.GC.Server" Value="false" />
     <Compile Include="..\src\Core.cs" Link="Core.cs" />
     <Compile Include="..\src\Diagnostics.cs" Link="Diagnostics.cs" />
-    <Compile Include="..\src\ResourceTrend.cs" Link="ResourceTrend.cs" />
+    <Compile Include="..\src\ResourceTrend.cs" Link="ResourceTrend.cs" Condition="'$(VerificationBuild)' == 'true'" />
     <Compile Include="..\src\Timeline.cs" Link="Timeline.cs" />
     <Compile Include="..\src\AppTheme.cs" Link="AppTheme.cs" />
     <Compile Include="..\src\Storage.cs" Link="Storage.cs" />
@@ -29,4 +29,10 @@
     <EmbeddedResource Include="..\assets\traffic.ico" LogicalName="ProxyTrafficFloat.traffic.ico" />
     <EmbeddedResource Include="..\assets\heroicons\glyphs.bin" LogicalName="TrafficLens.ToolbarPaths" />
   <Compile Include="..\src\QuotaForecast.cs" Link="QuotaForecast.cs" /><Compile Include="..\src\NodeLatency.cs" Link="NodeLatency.cs" /></ItemGroup>
+  <PropertyGroup Condition="'$(VerificationBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);TRAFFIC_LENS_VERIFICATION</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(VerificationBuild)' != 'true'">
+    <Compile Remove="**/*Tests.cs" />
+  </ItemGroup>
 </Project>

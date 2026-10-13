@@ -45,6 +45,14 @@ public static class ReliabilityTests
         Directory.CreateDirectory(root);
         try
         {
+            string nullablePath = Path.Combine(root, "nullable-settings.json");
+            File.WriteAllText(nullablePath, "{\"LatencyNode\":null,\"Endpoint\":null}");
+            var nullable = Settings.Load(nullablePath);
+            if (nullable.LatencyNode != "" || nullable.Endpoint != "")
+                throw new Exception("Null local settings reached sampling/latency consumers.");
+            File.WriteAllText(nullablePath, "{\"LatencyNode\":\" example-node \"}");
+            if (Settings.Load(nullablePath).LatencyNode != "example-node")
+                throw new Exception("Node selection not normalized at the settings boundary.");
             string path = Path.Combine(root, "settings.json"), broken = "{\"Visible\":false,broken";
             File.WriteAllText(path, broken);
             var recovered = Settings.Load(path);
@@ -54,6 +62,27 @@ public static class ReliabilityTests
             recovered.Save(path);
             if (Settings.Load(path).Recovered || !Settings.Load(path).Visible)
                 throw new Exception("Recovered configuration cannot be saved.");
+            for (int i = 0; i < 6; i++)
+            {
+                File.WriteAllText(path, "{broken-" + i);
+                if (!Settings.Load(path).Recovered) throw new Exception("Corrupt settings recovery failed.");
+            }
+            var retained = Directory.GetFiles(root, "settings.json.corrupt-*").OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            if (retained.Length != 3 || File.ReadAllText(retained[^1]) != "{broken-5")
+                throw new Exception("Corrupt settings backups are not bounded or discarded the newest evidence.");
+            string lockedCorrupt = Path.Combine(root, "locked-corrupt.json");
+            for (int i = 0; i < 3; i++) { File.WriteAllText(lockedCorrupt, "{broken"); Settings.Load(lockedCorrupt); }
+            string oldest = Directory.GetFiles(root, "locked-corrupt.json.corrupt-*").OrderBy(x => x, StringComparer.Ordinal).First();
+            using (new FileStream(oldest, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                File.WriteAllText(lockedCorrupt, "{broken");
+                if (!Settings.Load(lockedCorrupt).Recovered) throw new Exception("Locked old backup prevented completed recovery.");
+            }
+            File.WriteAllText(lockedCorrupt, "{broken");
+            Settings.Load(lockedCorrupt);
+            if (Directory.GetFiles(root, "locked-corrupt.json.corrupt-*").Length != 3)
+                throw new Exception("Backup cleanup did not resume after the file was released.");
+            recovered.Save(path);
             // Two real processes contend on the complete read-modify-write transaction.
             Process StartWorker()
             {

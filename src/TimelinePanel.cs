@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -13,7 +16,7 @@ using OxyPlot.Wpf;
 namespace ProxyTrafficFloat;
 
 /// <summary>One reusable plot in the short-lived settings process. Only visible, aggregated points are loaded.</summary>
-public sealed class TimelinePanel : StackPanel, IDisposable
+public sealed partial class TimelinePanel : StackPanel, IDisposable
 {
     readonly MonitorApp app;
     readonly Action changed;
@@ -48,10 +51,17 @@ public sealed class TimelinePanel : StackPanel, IDisposable
     double unit = 1024;
     Point? hoverPoint;
     DateTime refreshed = DateTime.MinValue;
+    readonly CancellationTokenSource readStop;
+    readonly CancellationToken readCancellation;
+    Task? readTask;
+    int readVersion;
+    public Task PendingRead => readTask ?? Task.CompletedTask;
 
-    public TimelinePanel(MonitorApp app, Action changed)
+    public TimelinePanel(MonitorApp app, Action changed, CancellationToken cancellation = default)
     {
         this.app = app;
+        readStop = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        readCancellation = readStop.Token;
         this.changed = changed;
         var selectors = new WrapPanel();
         selectors.Children.Add(period);
@@ -217,11 +227,9 @@ public sealed class TimelinePanel : StackPanel, IDisposable
     double GraphTime(TimelinePoint point) => ToAxis(point.Timestamp) + Math.Min(step, point.Resolution == 60 ? 60 : step) / 2.0 / 86400;
     public void Refresh(bool force = false)
     {
-        if (!force && DateTime.UtcNow - refreshed < TimeSpan.FromSeconds(5))
+        if (readCancellation.IsCancellationRequested || (!force && DateTime.UtcNow - refreshed < TimeSpan.FromSeconds(5)))
             return;
         SyncChoices();
-        var previousMouse = hoverPoint;
-        HidePointer(false);
         fullLast = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 1;
         fullFirst = app.Config.TimelineRange switch
         {
@@ -242,8 +250,56 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         }
         int visiblePoints = Math.Clamp((int)(plot.ActualWidth / 2.5), 180, 360);
         step = ChartMath.Step(viewLast - viewFirst, app.Config.TimelineMetric == 1, visiblePoints);
-        long first = viewFirst / step * step, last = (viewLast + step - 1) / step * step;
-        data = app.Store.QueryTimeline(DateTimeOffset.FromUnixTimeSeconds(first), DateTimeOffset.FromUnixTimeSeconds(last), selectedTarget, step);
+        refreshed = DateTime.UtcNow;
+        QueueRead();
+    }
+    void QueueRead()
+    {
+        if (readCancellation.IsCancellationRequested) return;
+        readVersion++;
+        if (readTask is not { IsCompleted: false })
+            readTask = ReadAsync();
+    }
+    async Task ReadAsync()
+    {
+        int version;
+        do
+        {
+            version = readVersion;
+            int resolution = step;
+            long first = viewFirst / resolution * resolution, last = (viewLast + resolution - 1) / resolution * resolution;
+            string selected = selectedTarget;
+            long? from = selectedFirst, to = selectedLast;
+            try
+            {
+                var result = await Task.Run(() =>
+                {
+                    using var store = TrafficStore.OpenReadOnly(Path.Combine(app.DataDirectory, "traffic.sqlite"), readCancellation);
+                    var points = store.QueryTimeline(DateTimeOffset.FromUnixTimeSeconds(first), DateTimeOffset.FromUnixTimeSeconds(last), selected, resolution);
+                    readCancellation.ThrowIfCancellationRequested();
+                    var totals = from != null && to != null ? store.QueryTimelineTotals(from.Value, to.Value, selected) : null;
+                    return (Points: points, Totals: totals);
+                }, readCancellation);
+                if (readCancellation.IsCancellationRequested) return;
+                if (version != readVersion) continue;
+                data = result.Points;
+                Render(result.Totals);
+            }
+            catch (OperationCanceledException) when (readCancellation.IsCancellationRequested) { return; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                if (readCancellation.IsCancellationRequested) return;
+                if (version != readVersion) continue;
+                empty.Text = Strings.T("记录读取失败");
+                empty.Visibility = Visibility.Visible;
+                Diagnostics.Write(app.DataDirectory, "timeline-read", error);
+            }
+        } while (!readCancellation.IsCancellationRequested && version != readVersion);
+    }
+    void Render(TimelineTotals? totals)
+    {
+        var previousMouse = hoverPoint;
+        HidePointer(false);
         double maximum = data.Count == 0 ? 0 : data.Max(p => Math.Max(Value(p, true), Value(p, false)));
         double scaleTop = Math.Max(detailScale ? 1024 : 1024 * 1024, maximum * 1.12);
         unit = scaleTop >= 1024 * 1024 ? 1024 * 1024 : 1024;
@@ -290,7 +346,7 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         pan.Value = viewFirst;
         pan.Visibility = full ? Visibility.Collapsed : Visibility.Visible;
         syncing = false;
-        UpdateSelection(false);
+        UpdateSelection(false, totals);
         model.ResetAllAxes();
         model.InvalidatePlot(true);
         refreshed = DateTime.UtcNow;
@@ -327,7 +383,7 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         }
         UpdateSelection();
     }
-    void UpdateSelection(bool invalidate = true)
+    void UpdateSelection(bool invalidate = true, TimelineTotals? total = null)
     {
         model.Annotations.Remove(startLine);
         model.Annotations.Remove(endLine);
@@ -349,14 +405,23 @@ public sealed class TimelinePanel : StackPanel, IDisposable
                 band.MinimumX = startLine.X;
                 band.MaximumX = endLine.X;
                 model.Annotations.Add(band);
-                var total = app.Store.QueryTimelineTotals(selectedFirst.Value, selectedLast.Value, selectedTarget);
-                selection.Text = $"{Format(selectedFirst.Value)} — {Format(selectedLast.Value)}\n↓ {Display.Bytes(total.Download)}    ↑ {Display.Bytes(total.Upload)}    " + Strings.Format("已监测 {0} / {1} 秒", total.Seconds.ToString("0.#"), (selectedLast.Value - selectedFirst.Value).ToString());
-                if (total.PartialLegacyMinutes > 0)
-                    selection.Text += "\n" + Strings.T("边界未覆盖完整的旧分钟记录不计入区间总量。");
+                if (total == null)
+                {
+                    selection.Text = $"{Format(selectedFirst.Value)} — {Format(selectedLast.Value)}";
+                }
+                else
+                {
+                    selection.Text = $"{Format(selectedFirst.Value)} — {Format(selectedLast.Value)}\n↓ {Display.Bytes(total.Download)}    ↑ {Display.Bytes(total.Upload)}    " + Strings.Format("已监测 {0} / {1} 秒", total.Seconds.ToString("0.#"), (selectedLast.Value - selectedFirst.Value).ToString());
+                    if (total.PartialLegacyMinutes > 0)
+                        selection.Text += "\n" + Strings.T("边界未覆盖完整的旧分钟记录不计入区间总量。");
+                }
             }
         }
         if (invalidate)
+        {
             model.InvalidatePlot(false);
+            QueueRead();
+        }
     }
     void Hover(Point mouse)
     {
@@ -437,114 +502,11 @@ public sealed class TimelinePanel : StackPanel, IDisposable
         band.Fill = OxyColor.FromAColor(28, C("Accent"));
         model.InvalidatePlot(false);
     }
-    public void VerifyForTest(string output)
-    {
-        var utc = DateTimeOffset.UtcNow;
-        var shown = (DateTime)x.GetValue(ToAxis(utc.ToUnixTimeSeconds()));
-        if (Math.Abs((shown - utc.LocalDateTime).TotalSeconds) > 1)
-            throw new InvalidOperationException("Timeline local timezone failed.");
-        target.ApplyTemplate();
-        if (target.Template.FindName("PART_EditableTextBox", target) is not TextBox)
-            throw new InvalidOperationException("Editable target missing.");
-        SelectTarget("downloads.example");
-        if (down.Points.Count == 0 || up.Points.Any(p => double.IsFinite(p.Y) && p.Y != 0))
-            throw new InvalidOperationException("Target filter failed.");
-        SelectTarget("");
-        Zoom(0.1, 0.8);
-        long before = viewFirst, after = viewLast;
-        Pick(viewLast - 120);
-        Pick(viewFirst + 10);
-        if (selectedFirst > selectedLast || !selection.Text.Contains("↓") || !selection.Text.Contains("↑"))
-            throw new InvalidOperationException("Interval totals missing.");
-        for (int i = 0; i < 100; i++)
-            Refresh(true);
-        if (viewFirst != before || viewLast != after || !ReferenceEquals(plot.Model, model) || down.Points.Count > 2500 || model.Annotations.Count != 4)
-            throw new InvalidOperationException("Refresh changed zoom or retained plot resources.");
-        string mode = app.Config.ColorMode;
-        foreach (string theme in new[] { "light", "dark" })
-        {
-            Ui.Theme(Window.GetWindow(this), theme);
-            ApplyTheme();
-        }
-        if (selectedLast == null || selectedTarget != "" || viewFirst != before)
-            throw new InvalidOperationException("Theme lost chart state.");
-        Ui.Theme(Window.GetWindow(this), mode);
-        ApplyTheme();
-        UpdateLayout();
-        if (data.Count > 0)
-        {
-            Hover(new Point(x.Transform(GraphTime(data[data.Count / 2])), model.PlotArea.Top + 50));
-            if (pointer.Visibility != Visibility.Visible || !pointerDown.Text.Contains("↓") || !pointerUp.Text.Contains("↑"))
-                throw new InvalidOperationException("Combined hover tracker failed.");
-            Refresh(true);
-            if (pointer.Visibility != Visibility.Visible)
-                throw new InvalidOperationException("Refresh hid an idle hover tracker.");
-        }
-        selectedFirst = selectedLast = null;
-        full = true;
-        Refresh(true);
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "timeline-ui-test.txt"), "PASS: local timestamps, editable/filter targets, zoom and interval preserved across 100 refreshes and theme changes, bounded points/annotations\n");
-    }
-    public async System.Threading.Tasks.Task VerifyWheelForTest(string output)
-    {
-        SelectTarget("");
-        full = true;
-        Refresh(true);
-        long before = viewLast - viewFirst;
-        var point = new Point(model.PlotArea.Left + model.PlotArea.Width / 2, model.PlotArea.Top + 30);
-        if (HandleWheel(120, ModifierKeys.None, point) || viewLast - viewFirst != before)
-            throw new InvalidOperationException("Ordinary wheel changed the chart range.");
-        if (!HandleWheel(120, ModifierKeys.Control, point) || viewLast - viewFirst >= before)
-            throw new InvalidOperationException("Ctrl+wheel did not zoom the chart.");
-        var element = System.Windows.Media.VisualTreeHelper.GetParent(plot);
-        while (element != null && element is not ScrollViewer)
-            element = System.Windows.Media.VisualTreeHelper.GetParent(element);
-        var scroll = (ScrollViewer)element!;
-        scroll.ScrollToTop();
-        await System.Threading.Tasks.Task.Delay(60);
-        before = viewLast - viewFirst;
-        plot.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
-        {
-            RoutedEvent = Mouse.MouseWheelEvent,
-            Source = plot
-        });
-        await System.Threading.Tasks.Task.Delay(60);
-        if (scroll.ScrollableHeight > 0 && scroll.VerticalOffset == 0)
-            throw new InvalidOperationException("PlotView swallowed normal page scrolling.");
-        if (viewLast - viewFirst != before)
-            throw new InvalidOperationException("Bubbling wheel zoomed the chart.");
-        full = true;
-        Refresh(true);
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "chart-wheel-test.txt"), "PASS: normal wheel scrolls the containing page without zoom; Ctrl+wheel zooms; plot resources reused\n");
-    }
-
-    public string SelectedTargetForTest => selectedTarget;
-    public void PreviewForTest()
-    {
-        full = true;
-        Refresh(true);
-        Zoom(0.8, 0.7);
-        Pick(viewFirst + 20);
-        Pick(viewLast - 20);
-        UpdateLayout();
-        if (data.Count > 0)
-        {
-            var p = data[data.Count / 2];
-            Hover(new Point(x.Transform(GraphTime(p)), model.PlotArea.Top + 80));
-        }
-    }
-    public void PreviewLowTrafficForTest(bool detailView)
-    {
-        selectedFirst = selectedLast = null;
-        detailScale = detailView;
-        full = true;
-        SelectTarget("low.example");
-        if (!detailView && y.Maximum * unit < 1024 * 1024)
-            throw new InvalidOperationException("Low traffic filled the burst scale.");
-    }
-    public string LayoutForTest => $"plot={plot.ActualWidth:0.#}, overlay={overlay.ActualWidth:0.#}, area={model.PlotArea}, popupX={Canvas.GetLeft(pointer):0.#}, popupWidth={pointer.DesiredSize.Width:0.#}";
     public void Dispose()
     {
+        readStop.Cancel();
+        if (PendingRead.IsCompleted) readStop.Dispose();
+        else _ = PendingRead.ContinueWith(_ => readStop.Dispose(), TaskScheduler.Default);
         plot.Model = null;
         down.Points.Clear();
         up.Points.Clear();

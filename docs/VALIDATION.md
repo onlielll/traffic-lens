@@ -1,5 +1,18 @@
 # 验证报告 · Validation
 
+## 2.1.0 审计修复验证 · 2026-10-14
+
+- 待提交代码树通过全部核心测试；x64 与 x86 各通过 48 项原生交互检查，以及中英文、大小布局、滚轮、滑块、动画和独立设置进程退出检查。
+- 正式 x64、x86、ARM64 构建成功；程序集元数据检查确认正式构建不包含截图、自检方法。ARM64仍只交叉构建，未作设备运行验证。
+- 失败输出、提前关闭、旧PASS报告、重复验证和子进程退出检查使用真实负向用例；两秒测试明确标为未完成，不再假装资源稳定。
+- 配置空值、被占用重连通知、节点A→B→A请求竞争、空延迟历史和文字过期回归通过；实际SQLite写锁验证清空提交先于通知。
+- 相同14万行、2万个域名数据下，SQL查询中位数约109→112ms，界面发起查询约121→0.03ms。准确总量、最终筛选和关闭取消保持一致；改善是移除UI阻塞，不是SQL加速。
+- 本机接口连续运行3600秒：成功3600次，失败0次，资源趋势检查通过。GDI始终27，句柄354–370；预热后私有提交均值增长8.4MiB。Windows私有工作集抽样33.53–36.24MiB，抽样不代表峰值。没有强制GC或清空工作集；本次结果不等于所有设备或无限时长的泄漏保证。
+- 本次x64合并自包含目录约133.21MiB；尚未重打新安装包，旧附件体积不作为这次修复的包体积证据。
+
+The reviewed tree passes core tests and actual x64/x86 UI checks. Production builds exclude verification hooks. A one-hour local API run records 3,600 successful reads, no failures, stable GDI counts and a passing resource trend. ARM64 remains cross-build-only; working-set samples and one run do not establish universal or indefinite stability.
+
+
 ## 2.1.0 额度与资源优化 · 2026-10-13
 
 - 额度按最近七个有记录日的上传与下载合计估算，不含未结束的今天；只扣减额度更新后观测到的用量。测试覆盖旧库迁移、重启、跨日期记录、统计清空与原子回滚；没有往日记录时不外推天数。

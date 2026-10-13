@@ -4,10 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
-using System.Threading;
 
 namespace ProxyTrafficFloat;
 
@@ -110,6 +110,8 @@ public sealed class Settings
             var settings = JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJson.Default.Settings) ?? throw new JsonException("Expected settings object.");
             settings.Language = Strings.NormalizeLanguage(settings.Language);
             settings.ColorMode = AppTheme.Normalize(settings.ColorMode);
+            settings.LatencyNode = (settings.LatencyNode ?? "").Trim();
+            settings.Endpoint = (settings.Endpoint ?? "").Trim();
             // Settings can be edited outside the app. Bound values before they reach window geometry or timers.
             settings.SlowNodeMs = Clamp(settings.SlowNodeMs, 50, 10000, 300);
             settings.QuotaGB = Clamp(settings.QuotaGB, 0, 1048576, 0);
@@ -135,7 +137,18 @@ public sealed class Settings
         catch (JsonException error)
         {
             File.Move(path, path + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff"));
-            Diagnostics.Write(Path.GetDirectoryName(path)!, "settings-corrupt", error);
+            string directory = Path.GetDirectoryName(path)!;
+            Diagnostics.Write(directory, "settings-corrupt", error);
+            try
+            {
+                foreach (string old in Directory.GetFiles(directory, Path.GetFileName(path) + ".corrupt-*")
+                    .OrderByDescending(x => x, StringComparer.Ordinal).Skip(3))
+                    File.Delete(old);
+            }
+            catch (Exception cleanupError) when (cleanupError is IOException or UnauthorizedAccessException)
+            {
+                Diagnostics.Write(directory, "settings-backup-cleanup", cleanupError);
+            }
             return new() { Recovered = true };
         }
     }
@@ -234,6 +247,34 @@ public sealed partial class TrafficStore : IDisposable
     [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.StdCall)]
     static extern void sqlite3_free(IntPtr pointer);
 
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.StdCall)]
+    static extern int sqlite3_open_v2([MarshalAs(UnmanagedType.LPUTF8Str)] string filename, out IntPtr database, int flags, IntPtr vfs);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    delegate int Progress(IntPtr context);
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.StdCall)]
+    static extern void sqlite3_progress_handler(IntPtr database, int instructions, Progress callback, IntPtr context);
+    readonly CancellationToken readCancellation;
+    readonly Progress? readProgress;
+
+    public static TrafficStore OpenReadOnly(string path) => new(path, default);
+    public static TrafficStore OpenReadOnly(string path, CancellationToken cancellation) => new(path, cancellation);
+    TrafficStore(string path, CancellationToken cancellation)
+    {
+        readCancellation = cancellation;
+        try
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (sqlite3_open_v2(path, out db, 1, IntPtr.Zero) != 0) throw new IOException("无法打开统计数据库");
+            Exec("PRAGMA busy_timeout=2000;");
+            if (cancellation.CanBeCanceled)
+            {
+                readProgress = _ => cancellation.IsCancellationRequested ? 1 : 0;
+                sqlite3_progress_handler(db, 1000, readProgress, IntPtr.Zero);
+            }
+        }
+        catch { Dispose(); throw; }
+    }
+
     public TrafficStore(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -267,6 +308,7 @@ public sealed partial class TrafficStore : IDisposable
         if (sqlite3_exec(db, sql, callback, IntPtr.Zero, out var error) == 0) return;
         string message = Marshal.PtrToStringUTF8(error) ?? "SQLite 错误";
         sqlite3_free(error);
+        readCancellation.ThrowIfCancellationRequested();
         throw new IOException(message);
     }
 

@@ -18,4 +18,11 @@
   <ItemGroup>
     <PackageReference Include="OxyPlot.Wpf" Version="2.2.0" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(VerificationBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);TRAFFIC_LENS_VERIFICATION</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(VerificationBuild)' != 'true'">
+    <Compile Remove="**/*Tests.cs" />
+    <Compile Remove="ResourceTrend.cs" />
+  </ItemGroup>
 </Project>

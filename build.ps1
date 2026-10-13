@@ -1,7 +1,8 @@
 param(
     [ValidateSet('win-x64','win-x86','win-arm64')][string]$Runtime = 'win-x64',
     [switch]$Test,
-    [switch]$Development
+    [switch]$Development,
+    [switch]$Verification
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
@@ -13,10 +14,12 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
 }
 
-$nativeOutput = Join-Path $taskRoot ".build\native-$Runtime"
-$settingsOutput = Join-Path $taskRoot ".build\settings-$Runtime"
-$mergedOutput = Join-Path $taskRoot ".build\publish\$Runtime"
+$buildRoot = if ($Verification) { Join-Path $taskRoot '.build\verification' } else { Join-Path $taskRoot '.build' }
+$nativeOutput = Join-Path $buildRoot "native-$Runtime"
+$settingsOutput = Join-Path $buildRoot "settings-$Runtime"
+$mergedOutput = Join-Path $buildRoot "publish\$Runtime"
 $sharedArgs = @('-c','Release','--nologo','-r',$Runtime,'--self-contained',(-not $Development).ToString().ToLowerInvariant(),'-p:DebugType=none','-p:DebugSymbols=false','-p:PublishReadyToRun=false')
+if ($Verification) { $sharedArgs += '-p:VerificationBuild=true' }
 & $dotnet publish (Join-Path $taskRoot 'native\Native.csproj') @sharedArgs -o $nativeOutput
 if ($LASTEXITCODE -ne 0) { throw 'Resident build failed' }
 & $dotnet publish (Join-Path $taskRoot 'src\ProxyTrafficFloat.csproj') @sharedArgs -o $settingsOutput

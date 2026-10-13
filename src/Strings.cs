@@ -32,6 +32,7 @@ public static class Strings
 
     static readonly Dictionary<string, string> English = new(StringComparer.Ordinal)
     {
+        ["实时监控正常 · 本机数据读取失败"] = "Monitoring active · Local data read failed",
         ["全屏时自动隐藏"] = "Hide in fullscreen",
         ["前台应用占满屏幕时隐藏，退出全屏后恢复；后台监测继续。"] = "Hide while the foreground app is fullscreen; restore afterwards. Monitoring continues.",
         ["拖动悬浮窗四角可等比例调整大小，锁定时禁用。"] = "Drag any overlay corner to resize proportionally. Disabled while locked.",
@@ -91,6 +92,7 @@ public static class Strings
         ["至少需要一个往日记录日才能估算。"] = "At least one previous recorded day is needed.",
         ["额度预计可用天数"] = "Remaining days",
         ["仅在展开的悬浮窗显示；在流量记录中填写剩余额度。"] = "Show in the expanded overlay. Enter your allowance in Traffic history.",
+        ["悬浮窗发生错误，请重新启动。"] = "The overlay encountered an error. Please restart it.",
         ["设置窗口发生错误，请重新打开。"] = "Settings encountered an error. Please reopen it.",
         ["无法读取本机状态，请查看日志。"] = "Cannot read local status. See the diagnostic logs.",
         ["监控启动失败，请查看日志。"] = "Monitoring could not start. See the diagnostic logs.",

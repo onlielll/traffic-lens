@@ -3,13 +3,13 @@
 <p align="center"><strong>Find what's using your proxy bandwidth.</strong></p>
 <p align="center">A Windows desktop overlay for Clash Verge / Mihomo</p>
 <p align="center">
-  <a href="https://github.com/onlielll/traffic-lens/releases/tag/v2.1.0"><img src="https://img.shields.io/badge/preview-v2.1.0-5b6ee1?style=flat-square" alt="v2.1.0 preview"></a>
+  <a href="https://github.com/onlielll/traffic-lens/tree/release/v2.1-preview"><img src="https://img.shields.io/badge/development-v2.1.0-5b6ee1?style=flat-square" alt="v2.1.0 preview"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078d4?style=flat-square" alt="Windows 10 / 11">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b9b87?style=flat-square" alt="MIT license"></a>
 </p>
 <p align="center">
-  <strong><a href="https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-setup.exe">Download for Windows x64</a></strong> ·
-  <a href="https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-portable.zip">Portable ZIP</a> ·
+  <strong><a href="https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-setup.exe">Download for Windows x64</a></strong> ·
+  <a href="https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-portable.zip">Portable ZIP</a> ·
   <a href="README.md">简体中文</a>
 </p>
 
@@ -23,17 +23,17 @@ When traffic spikes, see the busiest download and upload targets, their domains 
 
 ## Download
 
-**Current release: v2.1.0 preview.** Both installers and portable packages include the runtime. No separate .NET installation is needed.
+**Downloads: v2.0.0 public preview.** This branch contains 2.1.0 development sources; updated packages are not published yet. Both installers and portable packages include the runtime. No separate .NET installation is needed.
 
 | Architecture | Installer | Portable |
 | --- | --- | --- |
-| **Intel / AMD 64-bit (most PCs)** | [Windows x64](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-portable.zip) |
-| 32-bit Windows | [Windows x86](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x86-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x86-portable.zip) |
-| Windows on ARM | [Windows ARM64](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-arm64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-arm64-portable.zip) |
+| **Intel / AMD 64-bit (most PCs)** | [Windows x64](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x64-portable.zip) |
+| 32-bit Windows | [Windows x86](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x86-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-x86-portable.zip) |
+| Windows on ARM | [Windows ARM64](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-arm64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.0.0/TrafficLens-2.0.0-win-arm64-portable.zip) |
 
 Installers install for the current user. For portable use, extract the folder and run `ProxyTrafficFloat.exe`.
 
-Targets Windows 10 / 11. Tested on Windows 11 x64 and its x86 compatibility environment; Windows 10, physical 32-bit devices, and ARM64 hardware testing are pending. [Test coverage and memory measurements](docs/VALIDATION.md) · [Release notes and checksums](https://github.com/onlielll/traffic-lens/releases/tag/v2.1.0)
+Targets Windows 10 / 11. Tested on Windows 11 x64 and its x86 compatibility environment; Windows 10, physical 32-bit devices, and ARM64 hardware testing are pending. [Test coverage and memory measurements](docs/VALIDATION.md) · [Release notes and checksums](https://github.com/onlielll/traffic-lens/releases)
 
 ## Quick start
 
@@ -48,7 +48,7 @@ In Connection & startup, enter the local Mihomo HTTP address, such as `http://12
 
 </details>
 
-## Timeline and data
+## Timeline and data · 2.1 development preview
 
 Enable recording to retain full per-second history for a rolling 24 hours. Filter by domain or IP, switch between speeds and per-minute usage, zoom with Ctrl + wheel, and pan with the slider. Select two points on the time axis to see upload and download totals for that interval. Smooth curves preserve peaks; unmonitored periods stay blank.
 
@@ -84,7 +84,7 @@ Traffic Lens reads the local Mihomo API. Final DIRECT connections and unknown ro
 
 **Observed totals measure usage seen while the monitor is running and help identify traffic sources.** Short connections and disconnected periods may be missed, so these totals are not billing figures. Process details depend on Mihomo; HTTPS connections do not identify downloaded files.
 
-Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change Clash routing rules. Manual update checks contact `api.github.com` and open the GitHub download page. When enabled, active latency testing makes external requests through Mihomo. Uninstalling preserves local settings and records.
+Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change Clash routing rules. Manual update checks contact `api.github.com` and open the GitHub download page. When enabled, active latency testing makes external requests through Mihomo. Uninstalling preserves local settings and records. The three most recent damaged-settings backups are retained.
 
 ## Feedback and contributing
 
@@ -100,7 +100,7 @@ Requires Windows and .NET 10 SDK. Installer builds also require Inno Setup 6.
 .\scripts\package.ps1 -Runtime win-x64 -IncludeSource
 ```
 
-Use `win-x86` or `win-arm64` for other architectures. Outputs go to `dist/`.
+Use `win-x86` or `win-arm64` for other architectures. Outputs go to `dist/`. Add `-Verification` for UI checks under `.build/verification/publish/`; production builds exclude screenshot and self-test code.
 
 </details>
 

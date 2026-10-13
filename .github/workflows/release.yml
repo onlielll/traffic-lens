@@ -90,7 +90,12 @@ jobs:
             echo "Release already exists; compiled packages remain available in Actions artifacts."
             exit 0
           fi
-          # Keep the first release introduction bilingual, matching the README.
-          awk 'found {print} /^## 首次 Release/ {found=1}' docs/REPOSITORY-INTRO.md > release-notes.md
+          # Use the bilingual notes for this version, without publishing internal drafts.
+          awk -v section="## ${RELEASE_TAG#v} " '
+            index($0, section) == 1 {found=1; next}
+            found && /^## / {exit}
+            found {print}
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md || { echo "Missing changelog for $RELEASE_TAG" >&2; exit 1; }
           gh release create "$RELEASE_TAG" --draft --prerelease --verify-tag --title "Traffic Lens $RELEASE_TAG" --notes-file release-notes.md
           gh release upload "$RELEASE_TAG" dist/*.zip dist/*-setup.exe dist/SHA256SUMS.txt

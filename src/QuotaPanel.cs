@@ -7,7 +7,7 @@ using System.Windows.Input;
 namespace ProxyTrafficFloat;
 
 // Settings-only view: no timer, collection cache or chart dependency in the resident.
-public sealed class QuotaPanel : StackPanel
+public sealed partial class QuotaPanel : StackPanel
 {
     readonly MonitorApp app;
     readonly TextBlock duration = Ui.Label("填写剩余流量", 26);
@@ -79,11 +79,11 @@ public sealed class QuotaPanel : StackPanel
         }
     }
 
-    public void Refresh(bool force = false)
+    public void Refresh(bool force = false, long? observed = null, UsageTrend? dailyTrend = null)
     {
         if (!force && shownQuota == app.Config.QuotaUpdatedUtc && language == Strings.Language && DateTime.UtcNow - refreshed < TimeSpan.FromSeconds(5)) return;
         var config = app.Config;
-        var estimate = config.HasQuota ? QuotaForecast.Calculate(config, app.Store.ObservedBytes(), app.Store.RecentDailyTrend(DateTime.Today)) : null;
+        var estimate = config.HasQuota ? QuotaForecast.Calculate(config, observed ?? app.Store.ObservedBytes(), dailyTrend ?? app.Store.RecentDailyTrend(DateTime.Today)) : null;
         duration.Text = estimate?.DurationText ?? Strings.T("填写剩余流量");
         remaining.Text = estimate is { } value ? Strings.Format("剩余 {0:0.##} GB", value.RemainingBytes / QuotaForecast.BytesPerGB) : "";
         trend.Text = estimate is { RecordedDays: > 0 } available ? Strings.Format("日均 {0:0.##} GB · {1} 个记录日", available.DailyBytes / QuotaForecast.BytesPerGB, available.RecordedDays) : Strings.T("至少需要一个往日记录日才能估算。");
@@ -96,22 +96,4 @@ public sealed class QuotaPanel : StackPanel
         refreshed = DateTime.UtcNow;
     }
 
-    public void VerifyCommitForTest()
-    {
-        void Enter(string value)
-        {
-            input.Text = value;
-            input.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(input), Environment.TickCount, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent });
-        }
-        Enter("24");
-        if (app.Config.QuotaGB != 24 || app.Config.QuotaBaselineBytes != app.Store.ObservedBytes()) throw new InvalidOperationException("Quota input did not commit its snapshot.");
-        var saved = app.Config.QuotaUpdatedUtc;
-        Enter("-1");
-        if (app.Config.QuotaUpdatedUtc != saved || app.Config.QuotaGB != 24) throw new InvalidOperationException("Invalid quota input changed the snapshot.");
-        app.Store.Add(new[] { new Increment(DateTime.Today, "downloads.example", 1_500_000_000, 500_000_000) });
-        Refresh(true);
-        if (duration.Text != Strings.Format("约 {0:0} 天", 22)) throw new InvalidOperationException("Observed usage did not reduce the displayed allowance.");
-        Enter("48");
-    }
-    public string DurationForTest => duration.Text;
 }

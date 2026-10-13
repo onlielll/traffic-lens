@@ -5,7 +5,7 @@ using ProxyTrafficFloat;
 namespace ProxyTrafficFloat.Native;
 
 /// <summary>Double-buffered native painting. GDI resources live for the canvas lifetime, never per frame.</summary>
-public sealed class Canvas : IDisposable
+public sealed partial class Canvas : IDisposable
 {
     IntPtr dc, bitmap, oldBitmap;
     IntPtr background, surface;
@@ -28,8 +28,9 @@ public sealed class Canvas : IDisposable
     public Canvas()
     {
         var screen = Win.GetDC(IntPtr.Zero);
-        dc = Win.CreateCompatibleDC(screen);
-        Win.ReleaseDC(IntPtr.Zero, screen);
+        try { dc = Win.CreateCompatibleDC(screen); }
+        finally { Win.ReleaseDC(IntPtr.Zero, screen); }
+        if (dc == IntPtr.Zero) throw new System.ComponentModel.Win32Exception("Could not create the drawing context.");
         AppTheme.Apply("system");
         background = Win.CreateSolidBrush(AppTheme.Bgr("Canvas"));
         surface = Win.CreateSolidBrush(AppTheme.Bgr("Surface"));
@@ -48,19 +49,23 @@ public sealed class Canvas : IDisposable
             RebuildPens();
         }
         if (width == newWidth && height == newHeight) return;
+        var screen = Win.GetDC(IntPtr.Zero);
+        IntPtr next;
+        try { next = Win.CreateCompatibleBitmap(screen, newWidth, newHeight); }
+        finally { Win.ReleaseDC(IntPtr.Zero, screen); }
+        if (next == IntPtr.Zero) throw new System.ComponentModel.Win32Exception("Could not create the drawing buffer.");
+        glyphs.Unbind();
+        var previous = Win.SelectObject(dc, next);
+        if (previous == IntPtr.Zero || previous == new IntPtr(-1))
+        {
+            Win.DeleteObject(next);
+            throw new System.ComponentModel.Win32Exception("Could not select the drawing buffer.");
+        }
+        if (oldBitmap == IntPtr.Zero) oldBitmap = previous;
+        if (bitmap != IntPtr.Zero) Win.DeleteObject(bitmap);
+        bitmap = next;
         width = newWidth;
         height = newHeight;
-        glyphs.Unbind();
-        if (bitmap != IntPtr.Zero)
-        {
-            Win.SelectObject(dc, oldBitmap);
-            Win.DeleteObject(bitmap);
-        }
-        var screen = Win.GetDC(IntPtr.Zero);
-        bitmap = Win.CreateCompatibleBitmap(screen, width, height);
-        Win.ReleaseDC(IntPtr.Zero, screen);
-        var previous = Win.SelectObject(dc, bitmap);
-        if (oldBitmap == IntPtr.Zero) oldBitmap = previous;
         glyphs.Bind(dc);
     }
 
@@ -252,36 +257,6 @@ public sealed class Canvas : IDisposable
     public void Paint(IntPtr target)
     {
         if (bitmap != IntPtr.Zero) Win.BitBlt(target, 0, 0, width, height, dc, 0, 0, 0x00CC0020);
-    }
-
-    public void SaveBitmap(string file)
-    {
-        var bytes = new byte[width * height * 4];
-        var info = new Win.BitmapInfo { Size = 40, Width = width, Height = height, Planes = 1, Bits = 32, ImageSize = (uint)bytes.Length };
-        Win.SelectObject(dc, oldBitmap);
-        try
-        {
-            if (Win.GetDIBits(dc, bitmap, 0, (uint)height, bytes, ref info, 0) == 0)
-                throw new InvalidOperationException("无法导出画布");
-        }
-        finally { Win.SelectObject(dc, bitmap); }
-        using var writer = new System.IO.BinaryWriter(System.IO.File.Create(file));
-        writer.Write((ushort)0x4D42);
-        writer.Write(54 + bytes.Length);
-        writer.Write(0);
-        writer.Write(54);
-        writer.Write(40);
-        writer.Write(width);
-        writer.Write(height);
-        writer.Write((ushort)1);
-        writer.Write((ushort)32);
-        writer.Write(0);
-        writer.Write(bytes.Length);
-        writer.Write(0);
-        writer.Write(0);
-        writer.Write(0);
-        writer.Write(0);
-        writer.Write(bytes);
     }
 
     public void Dispose()

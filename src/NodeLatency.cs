@@ -24,7 +24,6 @@ public sealed record NodeLatency(string Node, int Delay, DateTimeOffset At, int[
             var point = history[history.GetArrayLength() - count + i];
             if (point.ValueKind != JsonValueKind.Object) continue;
             if (point.TryGetProperty("delay", out var delay) && delay.ValueKind == JsonValueKind.Number && delay.TryGetInt32(out int value)) values[i] = Math.Max(0, value);
-            if (point.ValueKind != JsonValueKind.Object) continue;
             if (point.TryGetProperty("time", out var time) && time.ValueKind == JsonValueKind.String) DateTimeOffset.TryParse(time.GetString(), out at);
         }
         return new(node, values[^1], at, values, count >= 2 && values[^1] >= threshold && values[^2] >= threshold);
