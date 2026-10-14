@@ -17,6 +17,9 @@ jobs:
         runtime: [win-x64, win-x86, win-arm64]
     steps:
       - uses: actions/checkout@v7
+      - name: Validate release version handling
+        shell: pwsh
+        run: ./tests/ReleaseVersion.Tests.ps1
       - name: Verify release tag matches source version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -24,7 +27,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $project = [xml](Get-Content native/Native.csproj -Raw)
-          if ($env:RELEASE_TAG -ne ('v' + $project.Project.PropertyGroup.Version)) {
+          if ($env:RELEASE_TAG -ne ('v' + $project.SelectSingleNode('/Project/PropertyGroup/Version').InnerText)) {
             throw 'Release tag must match the version in native/Native.csproj.'
           }
       - uses: actions/setup-dotnet@v6
@@ -55,7 +58,7 @@ jobs:
         run: |
           $includeSource = '${{ matrix.runtime }}' -eq 'win-x64'
           $project = [xml](Get-Content native/Native.csproj -Raw)
-          ./scripts/package.ps1 -Runtime '${{ matrix.runtime }}' -Version $project.Project.PropertyGroup.Version -Compiler $env:TRAFFIC_LENS_ISCC -IncludeSource:$includeSource
+          ./scripts/package.ps1 -Runtime '${{ matrix.runtime }}' -Version $project.SelectSingleNode('/Project/PropertyGroup/Version').InnerText -Compiler $env:TRAFFIC_LENS_ISCC -IncludeSource:$includeSource
       - uses: actions/upload-artifact@v7
         with:
           name: traffic-lens-${{ matrix.runtime }}
