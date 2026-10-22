@@ -100,7 +100,7 @@
 .\scripts\package.ps1 -Runtime win-x64 -IncludeSource
 ```
 
-其他架构使用 `win-x86` 或 `win-arm64`，输出位于 `dist/`。界面自检使用 `-Verification` 构建，独立输出到 `.build/verification/publish/`；正式构建不包含截图与自检代码。
+其他架构使用 `win-x86` 或 `win-arm64`，输出位于 `dist/`。界面自检使用 `-Verification` 构建，独立输出到 `.build/verification/publish/<runtime>/`（例如 `win-x64`、`win-x86`）；正式构建不包含截图与自检代码。
 
 </details>
 
