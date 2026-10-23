@@ -72,6 +72,11 @@ public sealed partial class MonitorApp
                         if (i == 2) settings.SelectStatisticsView(0, false);
                         await Task.Delay(240);
                         SavePage($"settings-{language}{(small ? "-small" : "")}-{i}.png");
+                        if (i == 3)
+                        {
+                            await settings.PrepareUpdatePanelForTest();
+                            SavePage($"updates-{language}{(small ? "-small" : "")}.png");
+                        }
                         if (i == 2)
                         {
                             settings.ShowQuotaForTest(); await Task.Delay(240);

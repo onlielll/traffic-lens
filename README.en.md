@@ -84,7 +84,7 @@ Traffic Lens reads the local Mihomo API. Final DIRECT connections and unknown ro
 
 **Observed totals measure usage seen while the monitor is running and help identify traffic sources.** Short connections and disconnected periods may be missed, so these totals are not billing figures. Process details depend on Mihomo; HTTPS connections do not identify downloaded files.
 
-Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change Clash routing rules. Manual update checks contact `api.github.com` and open the GitHub download page. When enabled, active latency testing makes external requests through Mihomo. Uninstalling preserves local settings and records. The three most recent damaged-settings backups are retained.
+Settings and statistics are stored in `%LOCALAPPDATA%\ProxyTrafficFloat`; API secrets use Windows DPAPI encryption. Traffic Lens does not upload statistics or change Clash routing rules. Manual update checks read a small release feed from `raw.githubusercontent.com`, with `api.github.com` as a fallback. Download pages open on GitHub. When enabled, active latency testing makes external requests through Mihomo. Uninstalling preserves local settings and records. The three most recent damaged-settings backups are retained.
 
 ## Feedback and contributing
 

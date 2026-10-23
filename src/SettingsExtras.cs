@@ -81,27 +81,26 @@ public sealed partial class SettingsWindow
         {
             var button = (Button)sender;
             button.IsEnabled = false;
+            availableRelease = null;
             updateStatus.Text = Strings.T("正在检查…");
             try
             {
                 availableRelease = await ReleaseCheck.FetchAsync(app.Config.PreviewUpdates, featureStop.Token);
                 bool newer = availableRelease != null && availableRelease.Version > local;
-                updateStatus.Text = newer ? Strings.Format("发现新版本 {0}", availableRelease!.Tag) : Strings.T("暂无更高版本");
-                releaseButton!.Visibility = newer ? Visibility.Visible : Visibility.Collapsed;
+                updateStatus.Text = newer ? Strings.Format("发现新版本 {0}", availableRelease!.Tag) : Strings.T(availableRelease == null ? "暂无符合当前设置的版本，可调整预览版选项。" : "暂无更高版本");
             }
             catch (OperationCanceledException) when (featureStop.IsCancellationRequested) { }
             catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
             {
-                updateStatus.Text = Strings.T("检查失败，请稍后重试。");
+                updateStatus.Text = Strings.T(ReleaseCheck.FailureMessage(error));
                 Diagnostics.Write(app.DataDirectory, "update-check", error);
             }
             finally { button.IsEnabled = true; }
         });
         releaseButton = Ui.Button("查看版本", (_, _) =>
         {
-            if (availableRelease != null) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(availableRelease.Page.AbsoluteUri) { UseShellExecute = true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo((availableRelease?.Page ?? ReleaseCheck.ReleasesPage).AbsoluteUri) { UseShellExecute = true });
         });
-        releaseButton.Visibility = Visibility.Collapsed;
         buttons.Children.Add(check); buttons.Children.Add(releaseButton);
         card.Children.Add(buttons); card.Children.Add(updateStatus);
         page.Children.Add(Ui.Card(card));

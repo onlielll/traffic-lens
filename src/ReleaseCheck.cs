@@ -27,10 +27,33 @@ public static class ReleaseCheck
         return newest;
     }
 
+    public static readonly Uri ReleasesPage = new("https://github.com/onlielll/traffic-lens/releases");
+
     public static async Task<ReleaseInfo?> FetchAsync(bool previews, CancellationToken cancellation)
     {
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12), MaxResponseContentBufferSize = 1024 * 1024 };
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(6), MaxResponseContentBufferSize = 1024 * 1024 };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("TrafficLens-UpdateCheck");
-        return Parse(await client.GetStringAsync("https://api.github.com/repos/onlielll/traffic-lens/releases?per_page=20", cancellation), previews);
+        return await FetchAsync(client, previews, cancellation);
     }
+
+    internal static async Task<ReleaseInfo?> FetchAsync(HttpClient client, bool previews, CancellationToken cancellation)
+    {
+        try
+        {
+            return Parse(await client.GetStringAsync("https://raw.githubusercontent.com/onlielll/traffic-lens/main/updates.json", cancellation), previews);
+        }
+        catch (Exception error) when (!cancellation.IsCancellationRequested && error is HttpRequestException or OperationCanceledException or JsonException)
+        {
+            // The small release feed avoids shared-IP API quotas; the API remains a single fallback.
+            return Parse(await client.GetStringAsync("https://api.github.com/repos/onlielll/traffic-lens/releases?per_page=20", cancellation), previews);
+        }
+    }
+
+    public static string FailureMessage(Exception error) => error switch
+    {
+        HttpRequestException { StatusCode: System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests } => "GitHub 请求受限，请稍后重试或打开版本页。",
+        OperationCanceledException => "连接超时，请检查网络或代理后重试。",
+        HttpRequestException => "无法连接更新服务，请检查网络或代理。",
+        _ => "版本信息暂时不可用，请打开版本页。"
+    };
 }

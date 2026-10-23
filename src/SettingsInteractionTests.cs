@@ -127,6 +127,18 @@ public sealed partial class SettingsWindow
         }
     }
 
+    public async Task PrepareUpdatePanelForTest()
+    {
+        SelectPage(3);
+        availableRelease = null;
+        updateStatus!.Text = Strings.T(ReleaseCheck.FailureMessage(new System.Net.Http.HttpRequestException("", null, System.Net.HttpStatusCode.Forbidden)));
+        await Task.Delay(260);
+        var page = (SmoothScrollViewer)pages[3];
+        page.StopMotion(); page.ScrollToEnd();
+        await Task.Delay(60);
+        if (releaseButton == null || releaseButton.Visibility != Visibility.Visible || !releaseButton.IsEnabled)
+            throw new InvalidOperationException("The releases page must remain accessible when update checks fail.");
+    }
     public async Task VerifyClearOrderingAsync(string output)
     {
         string signal = Path.Combine(app.DataDirectory, "clear.signal");
