@@ -80,12 +80,19 @@ static class Test
         StorageTests.Run();
         ForecastTests.Run();
         FeatureTests.Run();
+        await ReleaseCheckTests.Run();
         TimelineTests.Run();
         LocalizationTests.Run();
         await TransportTests.Run();
         if (args.Contains("--live")) using (var client = new MihomoClient())
         {
             var live = await client.ReadAsync(new Settings()); True(live.DirectCount > 0, "live direct data"); True(live.Connections.Count > 0, "live proxy classification"); Console.WriteLine($"Live API: {client.Source}, proxy={live.Connections.Count}, direct={live.DirectCount}, unknown={live.UnknownCount}");
+        }
+        if (args.Contains("--updates-live"))
+        {
+            var release = await ReleaseCheck.FetchAsync(true, default);
+            True(release != null, "live public release feed");
+            Console.WriteLine("Live update feed: " + release!.Tag);
         }
         Console.WriteLine($"PASS: {assertions} assertions");
     }

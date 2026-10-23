@@ -19,3 +19,12 @@
 ## Pull request
 
 说明可复现的问题、修改后的行为、验证结果和剩余限制。涉及性能时，使用相同的构建类型、采样时间和内存口径进行比较。
+## 发布版本清单
+
+公开版本发布、撤回或预览标记变更后，同步根目录的 `updates.json` 并随正常代码审查提交。清单仅包含公开版本的标签、预览标记和 GitHub 页面，不含附件或个人数据；客户端借此避开匿名 API 配额。
+
+使用已登录的 GitHub CLI 生成清单，核对差异后提交：
+
+```powershell
+gh api 'repos/onlielll/traffic-lens/releases?per_page=20' --jq '[.[] | select(.draft == false) | {tag_name,draft,prerelease,html_url}]' | Set-Content updates.json -Encoding utf8
+```

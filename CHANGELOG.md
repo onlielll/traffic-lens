@@ -1,5 +1,12 @@
 # 更新记录
 
+## Unreleased
+
+- 修复共享代理出口的 GitHub 匿名 API 限流导致检查更新失败：优先读取官方小型版本清单，并保留一次 API 备用请求。
+- 区分限流、超时、网络和版本信息错误；版本页面始终可打开，预览版筛选保持不变。
+- Fix update checks on shared-IP GitHub API rate limits with a small first-party release feed and one API fallback.
+- Show actionable errors and keep the releases page accessible, including when only preview releases exist.
+
 ## 2.1.0 · 2026-10-14
 
 - 加入本地额度估算：手动填写剩余 GB，自动扣减后续监测用量，按最近 7 个往日记录日估算；展开悬浮窗可选显示。

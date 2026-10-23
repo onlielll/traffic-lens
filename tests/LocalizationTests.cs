@@ -19,6 +19,13 @@ public static class LocalizationTests
                 throw new Exception("English translation failed");
             if (Strings.T("example.com") != "example.com" || Strings.Format("今日 {0}", "1 MB") != "Today 1 MB")
                 throw new Exception("Display localization altered target values or templates");
+            foreach (var message in new[] {
+                "暂无符合当前设置的版本，可调整预览版选项。",
+                "GitHub 请求受限，请稍后重试或打开版本页。",
+                "连接超时，请检查网络或代理后重试。",
+                "无法连接更新服务，请检查网络或代理。",
+                "版本信息暂时不可用，请打开版本页。" })
+                if (Strings.T(message) == message) throw new Exception("Update status is missing its English translation.");
             if (!ReferenceEquals(CultureInfo.CurrentCulture, culture)) throw new Exception("Language changed number formatting");
 
             Strings.UseLanguage("auto");

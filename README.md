@@ -84,7 +84,7 @@
 
 **“监测累计”是软件运行期间观测到的用量，用于定位流量来源。** 短连接与断线期间可能漏记，不作为套餐计费依据；进程信息取决于 Mihomo，HTTPS 连接无法识别具体下载文件。
 
-设置与统计保存在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥使用 Windows DPAPI 加密。不上传统计、不修改 Clash 分流规则。手动检查更新访问 `api.github.com`，下载页在 GitHub 打开；主动测速开启后由 Mihomo 发起外网请求。卸载保留本机设置与记录。损坏设置备份最多保留最近三份。
+设置与统计保存在 `%LOCALAPPDATA%\ProxyTrafficFloat`，接口密钥使用 Windows DPAPI 加密。不上传统计、不修改 Clash 分流规则。手动检查更新优先读取 `raw.githubusercontent.com` 上的小型版本清单，不可用时尝试 `api.github.com`；下载页在 GitHub 打开；主动测速开启后由 Mihomo 发起外网请求。卸载保留本机设置与记录。损坏设置备份最多保留最近三份。
 
 ## 反馈与贡献
 
