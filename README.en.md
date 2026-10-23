@@ -100,7 +100,7 @@ Requires Windows and .NET 10 SDK. Installer builds also require Inno Setup 6.
 .\scripts\package.ps1 -Runtime win-x64 -IncludeSource
 ```
 
-Use `win-x86` or `win-arm64` for other architectures. Outputs go to `dist/`. Add `-Verification` for UI checks under `.build/verification/publish/`; production builds exclude screenshot and self-test code.
+Use `win-x86` or `win-arm64` for other architectures. Outputs go to `dist/`. Add `-Verification` for UI checks under `.build/verification/publish/<runtime>/` (for example `win-x64` or `win-x86`); production builds exclude screenshot and self-test code.
 
 </details>
 
