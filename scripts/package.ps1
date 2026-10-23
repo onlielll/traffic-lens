@@ -1,6 +1,6 @@
 param(
     [ValidateSet('win-x64', 'win-x86', 'win-arm64')][string]$Runtime = 'win-x64',
-    [string]$Version = '2.1.0',
+    [string]$Version = '2.1.1',
     [string]$Compiler,
     [switch]$IncludeSource,
     [switch]$SkipInstaller
@@ -89,7 +89,7 @@ if ($IncludeSource) {
         }
     }
     foreach ($taskFile in @('README.md', 'README.en.md', 'CONTRIBUTING.md', 'CHANGELOG.md',
-        'LICENSE', 'THIRD-PARTY-NOTICES.md', 'THIRD-PARTY-NOTICES-DOTNET.txt', 'THIRD-PARTY-NOTICES-RUNTIME.txt', 'THIRD-PARTY-NOTICES-HEROICONS.txt', 'THIRD-PARTY-NOTICES-OXYPLOT.txt', 'build.ps1', 'global.json', '.editorconfig', '.gitignore', '.gitattributes')) {
+        'LICENSE', 'THIRD-PARTY-NOTICES.md', 'THIRD-PARTY-NOTICES-DOTNET.txt', 'THIRD-PARTY-NOTICES-RUNTIME.txt', 'THIRD-PARTY-NOTICES-HEROICONS.txt', 'THIRD-PARTY-NOTICES-OXYPLOT.txt', 'build.ps1', 'updates.json', 'global.json', '.editorconfig', '.gitignore', '.gitattributes')) {
         $taskFilePath = Join-Path $taskRoot $taskFile
         if (Test-Path -LiteralPath $taskFilePath) { Copy-Item -LiteralPath $taskFilePath -Destination $taskSourceOutput }
     }

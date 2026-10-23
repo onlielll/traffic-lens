@@ -1,5 +1,14 @@
 # 验证报告 · Validation
 
+## 2.1.1 更新检查修复 · 2026-10-23
+
+- 复现共享出口匿名 API 配额耗尽、HTTP403；实际 .NET 客户端已通过官方小型版本清单读取公开版本。
+- 完整核心回归和发布版本校验通过。更新测试覆盖正常清单、一次 API 备用、预览筛选、超时、主动取消及错误分类。
+- x64/x86正式构建通过；真实WPF自检覆盖中英文、宽窄窗口及更新失败状态的版本页按钮。未增加常驻采样、后台轮询或运行时依赖。
+- 原有一小时资源测量见2.1.0报告。本轮没有重新执行一小时测试；Windows10、实体32位和ARM64硬件测试范围不变。
+
+The update checker passes transport, filtering, cancellation and bilingual UI regressions, including a real network request. The previous one-hour resource run was not repeated for this patch. ARM64 remains cross-build-only.
+
 ## 2.1.0 审计修复验证 · 2026-10-14
 
 - 待提交代码树通过全部核心测试；x64 与 x86 各通过 48 项原生交互检查，以及中英文、大小布局、滚轮、滑块、动画和独立设置进程退出检查。

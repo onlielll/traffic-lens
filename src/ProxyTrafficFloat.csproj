@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>ProxyTrafficSettings</AssemblyName>
-    <Version>2.1.0</Version>
+    <Version>2.1.1</Version>
     <Product>Traffic Lens Settings</Product>
     <Authors>onlielll</Authors>
     <Copyright>Copyright (c) 2026 onlielll</Copyright>

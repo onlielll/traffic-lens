@@ -3,13 +3,13 @@
 <p align="center"><strong>找出谁在消耗代理流量。</strong></p>
 <p align="center">Windows 桌面悬浮窗 · 适用于 Clash Verge / Mihomo</p>
 <p align="center">
-  <a href="https://github.com/onlielll/traffic-lens/releases/tag/v2.1.0"><img src="https://img.shields.io/badge/preview-v2.1.0-5b6ee1?style=flat-square" alt="v2.1.0 预览版"></a>
+  <a href="https://github.com/onlielll/traffic-lens/releases/tag/v2.1.1"><img src="https://img.shields.io/badge/preview-v2.1.1-5b6ee1?style=flat-square" alt="v2.1.1 预览版"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078d4?style=flat-square" alt="Windows 10 / 11">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b9b87?style=flat-square" alt="MIT 许可证"></a>
 </p>
 <p align="center">
-  <strong><a href="https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-setup.exe">下载 Windows x64 安装包</a></strong> ·
-  <a href="https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-portable.zip">便携版</a> ·
+  <strong><a href="https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-x64-setup.exe">下载 Windows x64 安装包</a></strong> ·
+  <a href="https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-x64-portable.zip">便携版</a> ·
   <a href="README.en.md">English</a>
 </p>
 
@@ -23,13 +23,13 @@
 
 ## 下载
 
-**当前版本：v2.1.0 公开预览。** 安装包与便携版均已包含运行环境，无需另装 .NET。
+**当前版本：v2.1.1 公开预览。** 安装包与便携版均已包含运行环境，无需另装 .NET。
 
 | 电脑架构 | 安装包 | 便携版 |
 | --- | --- | --- |
-| **Intel / AMD 64 位（通常选这个）** | [Windows x64](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x64-portable.zip) |
-| 32 位 Windows | [Windows x86](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x86-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-x86-portable.zip) |
-| Windows on ARM | [Windows ARM64](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-arm64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.0/TrafficLens-2.1.0-win-arm64-portable.zip) |
+| **Intel / AMD 64 位（通常选这个）** | [Windows x64](https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-x64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-x64-portable.zip) |
+| 32 位 Windows | [Windows x86](https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-x86-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-x86-portable.zip) |
+| Windows on ARM | [Windows ARM64](https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-arm64-setup.exe) | [ZIP](https://github.com/onlielll/traffic-lens/releases/download/v2.1.1/TrafficLens-2.1.1-win-arm64-portable.zip) |
 
 安装包为当前用户安装；便携版解压后运行 `ProxyTrafficFloat.exe`。
 
