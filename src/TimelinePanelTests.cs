@@ -96,6 +96,16 @@ public sealed partial class TimelinePanel
             Source = plot
         });
         await System.Threading.Tasks.Task.Delay(60);
+        double firstOffset = scroll.VerticalOffset;
+        var wheelClock = System.Diagnostics.Stopwatch.StartNew();
+        while (scroll.ScrollableHeight > 0 && (scroll.VerticalOffset == 0 || scroll is SmoothScrollViewer { IsMoving: true }) && wheelClock.Elapsed < TimeSpan.FromSeconds(2))
+        {
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+            if (scroll.VerticalOffset == 0 || scroll is SmoothScrollViewer { IsMoving: true })
+                await System.Threading.Tasks.Task.Delay(16);
+        }
+        File.WriteAllText(Path.Combine(output, "chart-wheel-clock-test.txt"), $"offsetAt60ms={firstOffset:0.###}, finalOffset={scroll.VerticalOffset:0.###}, additionalWaitMs={wheelClock.Elapsed.TotalMilliseconds:0.###}, moving={scroll is SmoothScrollViewer { IsMoving: true }}\n");
         if (scroll.ScrollableHeight > 0 && scroll.VerticalOffset == 0)
             throw new InvalidOperationException("PlotView swallowed normal page scrolling.");
         if (viewLast - viewFirst != before)

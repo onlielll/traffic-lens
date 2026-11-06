@@ -59,6 +59,7 @@ public sealed partial class MonitorApp
             settings.PrepareQuotaForTest();
             await settings.VerifyReuseForTest(output);
             await settings.VerifyScrollingAndSlidersAsync(output);
+            await settings.VerifyMotionLifecycleForTest(output);
             foreach (string language in new[] { "zh-CN", "en" })
             {
                 settings.SetLanguage(language);

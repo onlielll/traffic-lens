@@ -21,7 +21,7 @@ public sealed partial class AppearancePicker : Grid, IDisposable
     readonly string[] modes = { "system", "light", "dark" };
     readonly string[] names = { "跟随系统", "浅色", "深色" };
     readonly Button launcher;
-    int transitionVersion;
+    int transitionVersion, popupTransitionVersion;
 
     public AppearancePicker(Func<string> current, Action<string> choose)
     {
@@ -60,8 +60,22 @@ public sealed partial class AppearancePicker : Grid, IDisposable
         popup = new Popup { Child = shell, AllowsTransparency = true, StaysOpen = false, Placement = PlacementMode.Bottom, PlacementTarget = launcher, HorizontalOffset = -250, VerticalOffset = 3 };
         Children.Add(popup);
         launcher.Click += (_, _) => { Refresh(false); popup.IsOpen = !popup.IsOpen; };
-        popup.Closed += (_, _) => { shell.BeginAnimation(OpacityProperty, null); selectionPosition.BeginAnimation(TranslateTransform.XProperty, null); };
-        popup.Opened += (_, _) => { shell.Opacity = 0; shell.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)) { FillBehavior = FillBehavior.Stop }); shell.Opacity = 1; };
+        popup.Closed += (_, _) =>
+        {
+            ++popupTransitionVersion;
+            shell.BeginAnimation(OpacityProperty, null);
+            selectionPosition.BeginAnimation(TranslateTransform.XProperty, null);
+        };
+        popup.Opened += (_, _) =>
+        {
+            int version = ++popupTransitionVersion;
+            shell.BeginAnimation(OpacityProperty, null);
+            shell.Opacity = 1;
+            if (!SystemParameters.ClientAreaAnimation) return;
+            var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)) { FillBehavior = FillBehavior.Stop };
+            fade.Completed += (_, _) => { if (version == popupTransitionVersion) shell.BeginAnimation(OpacityProperty, null); };
+            shell.BeginAnimation(OpacityProperty, fade);
+        };
     }
     public void Refresh(bool animate = false)
     {
@@ -88,7 +102,9 @@ public sealed partial class AppearancePicker : Grid, IDisposable
     }
     public void Dispose()
     {
+        ++popupTransitionVersion;
         popup.IsOpen = false;
+        (popup.Child as UIElement)?.BeginAnimation(OpacityProperty, null);
         selectionPosition.BeginAnimation(TranslateTransform.XProperty, null);
         popup.Child = null;
     }

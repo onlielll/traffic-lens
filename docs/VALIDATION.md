@@ -1,5 +1,15 @@
 # 验证报告 · Validation
 
+## 未发布优化 · 2026-11-07
+
+- 完整核心测试、实际更新请求及三个正式架构构建通过。新增用例覆盖旧清单漏报、正式版优先、备用与取消、SQL候选限制。
+- 同一14万行/2万域名数据，预热后七次中位：全量查询75.802ms、4,155,992托管分配字节；200个候选66.961ms、41,736字节。仅减少候选读取，完整排行和总量不截断；这些数字不是常驻内存降幅。
+- 新增三项真实x64界面回归先在原版失败、修复后通过：快速反向滚动停止旧表格动画，统计标签与外观弹层完成/关闭后释放时钟。
+- 本机接口隔离观察600.013秒，成功600次、失败0次，GDI始终27，句柄354–371，私有提交采样19.68–23.85MiB，趋势检查通过。Windows私有工作集单次抽样约17.1MiB。未强制GC或清空工作集；十分钟结果不能证明无限期无泄漏。
+- 完整WPF复测中的旧中间帧断言在当前环境不稳定；x86原版同机对照也在固定260ms导航断言失败。新增诊断确认导航约317ms释放，改为等待真实完成。x86正式构建通过，但本轮完整x86界面自检未通过，未将其记为兼容通过。ARM64仍仅交叉构建。
+
+Core and targeted lifecycle regressions pass. Candidate-query allocations fall from 4,155,992 to 41,736 bytes on the fixed fixture. The ten-minute local run records 600 successes, zero failures and stable GDI; this is not an indefinite leak guarantee. Legacy frame-timing assertions remain unstable on this host, including the unmodified x86 baseline; a full x86 UI pass is not claimed.
+
 ## 2.1.1 更新检查修复 · 2026-10-23
 
 - 复现共享出口匿名 API 配额耗尽、HTTP403；实际 .NET 客户端已通过官方小型版本清单读取公开版本。

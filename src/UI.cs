@@ -254,7 +254,7 @@ public sealed partial class SettingsWindow : Window
     readonly List<Button> statisticsTabs = new();
     readonly TranslateTransform statisticsPosition = new();
     readonly Border statisticsPill = new() { Width = 124, CornerRadius = new CornerRadius(9), Background = Ui.Panel, BorderBrush = Ui.Line, BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false };
-    int statisticsView;
+    int statisticsView, statisticsTransitionVersion;
     readonly TextBlock emptyRows = Ui.Label("还没有监测记录\n有代理流量时，记录会自动出现在这里。", 12, Ui.Muted);
     readonly ComboBox range = new() { Width = 116 };
     readonly ComboBox sort = new() { Width = 148, Margin = new Thickness(8, 0, 0, 0) };
@@ -328,6 +328,8 @@ public sealed partial class SettingsWindow : Window
             app.Updated -= Refresh;
             timeline?.Dispose();
             appearance?.Dispose();
+            ++statisticsTransitionVersion;
+            statisticsPosition.BeginAnimation(TranslateTransform.XProperty, null);
             source?.RemoveHook(Hook);
             source = null;
         };
@@ -699,16 +701,21 @@ public sealed partial class SettingsWindow : Window
     public void SelectStatisticsView(int index, bool animate = true)
     {
         bool moved = index != statisticsView;
+        int version = ++statisticsTransitionVersion;
         double start = statisticsPosition.X;
         statisticsPosition.BeginAnimation(TranslateTransform.XProperty, null);
         statisticsView = index;
         statisticsPosition.X = index * 124;
         if (moved && animate && IsLoaded && SystemParameters.ClientAreaAnimation)
-            statisticsPosition.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(start, statisticsPosition.X, TimeSpan.FromMilliseconds(180))
+        {
+            var slide = new DoubleAnimation(start, statisticsPosition.X, TimeSpan.FromMilliseconds(180))
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 FillBehavior = FillBehavior.Stop
-            });
+            };
+            slide.Completed += (_, _) => { if (version == statisticsTransitionVersion) statisticsPosition.BeginAnimation(TranslateTransform.XProperty, null); };
+            statisticsPosition.BeginAnimation(TranslateTransform.XProperty, slide);
+        }
         rankingView.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
         timelineView.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         for (int i = 0; i < statisticsTabs.Count; i++)
@@ -1183,7 +1190,7 @@ public sealed partial class SettingsWindow : Window
                 var result = await Task.Run(() =>
                 {
                     using var store = TrafficStore.OpenReadOnly(System.IO.Path.Combine(app.DataDirectory, "traffic.sqlite"), featureStop.Token);
-                    var data = store.Query(first, last);
+                    var data = store.Query(first, last, view == 1 ? 200 : -1);
                     featureStop.Token.ThrowIfCancellationRequested();
                     if (view == 1) return (Data: data, Entries: (List<UsageRow>?)null, Down: 0L, Up: 0L, Observed: (long?)null, Trend: (UsageTrend?)null);
                     long download = 0, upload = 0;

@@ -80,8 +80,31 @@ public static class StorageTests
         }
         finally { Directory.Delete(root, true); }
     }
+    static void CandidateLimitPreservesRanking()
+    {
+        string path=Path.Combine(Path.GetTempPath(),"TrafficLens-candidates-"+Guid.NewGuid()+".sqlite");
+        try
+        {
+            using var store=new TrafficStore(path);
+            var day=DateTime.Today;
+            store.Add(Enumerable.Range(0,650).Select(i=>new Increment(day,"candidate-"+i+".example",i*11+1,i)));
+            store.Add(Enumerable.Range(0,650).Select(i=>new Increment(day.AddDays(-6),"candidate-"+i+".example",i+2,i*3)));
+            var full=store.Query(day.AddDays(-6),day);
+            var limited=store.Query(day.AddDays(-6),day,200);
+            if(full.Count!=650 || limited.Count!=200 || !limited.SequenceEqual(full.Take(200)))
+                throw new Exception("Timeline candidates must match the first 200 ranked domains without changing full queries.");
+            if(store.Query(day.AddDays(-6),day,0).Count!=0)
+                throw new Exception("A zero result limit must return no candidates.");
+            using var reader=TrafficStore.OpenReadOnly(path);
+            if(!reader.Query(day.AddDays(-6),day,200).SequenceEqual(limited))
+                throw new Exception("Read-only candidate query changed ranking.");
+            Console.WriteLine("PASS: bounded SQL candidates match full ranking across dates and preserve unlimited daily totals");
+        }
+        finally { foreach(string suffix in new[]{"","-wal","-shm"}) if(File.Exists(path+suffix)) File.Delete(path+suffix); }
+    }
     public static void Run()
     {
+        CandidateLimitPreservesRanking();
         ReadOnlyDoesNotMaintainHistory();
         string path = Path.Combine(Path.GetTempPath(), "ProxyTrafficFloat-rollback-" + Guid.NewGuid() + ".sqlite");
         try

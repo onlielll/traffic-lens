@@ -49,7 +49,12 @@ public sealed class SmoothScrollViewer : ScrollViewer
         int lines = SystemParameters.WheelScrollLines;
         double distance = -e.Delta / 120.0 * (lines < 0 ? ViewportHeight : lines * 24);
         double remaining = page.Move(distance);
-        if (Math.Abs(remaining) > 0.01)
+        if (Math.Abs(remaining) <= 0.01)
+        {
+            nested?.Stop();
+            nested = null;
+        }
+        else
         {
             // Page first, then the table at the page boundary. The pointer needn't move.
             for (DependencyObject? source = e.OriginalSource as DependencyObject; source != null && source != this; source = AncestorOf(source))
