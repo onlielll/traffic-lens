@@ -1,5 +1,14 @@
 # 更新记录
 
+## Unreleased
+
+- 修复表格快速反向滚动时旧动画仍继续的问题；统计标签与外观弹层完成、关闭后释放动画时钟。
+- 更新检查优先读取 GitHub 实时发布信息，失败时使用小型清单备用，避免有效旧清单一直掩盖新版；同数值版本优先正式版。
+- 时间线候选在 SQL 侧只读取前200个域名；完整排行和流量总量保持原口径。
+- Stop stale nested scrolling on rapid wheel reversal and release completed transition clocks.
+- Prefer live GitHub release metadata with one static-feed fallback; prefer stable releases on equal versions.
+- Limit timeline candidate reads to 200 rows without truncating rankings or totals.
+
 ## 2.1.1 · 2026-10-23
 
 - 修复共享代理出口的 GitHub 匿名 API 限流导致检查更新失败：优先读取官方小型版本清单，并保留一次 API 备用请求。

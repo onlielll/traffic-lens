@@ -19,6 +19,7 @@ static class Test
     {
         if (args.Length > 1 && args[0] == "--settings-worker") { ReliabilityTests.Worker(args[1]); return; }
         if(args.Contains("--timeline-benchmark")) { TimelineBenchmark.Run(); return; }
+        if(args.Contains("--history-query-benchmark")) { HistoryQueryBenchmark.Run(); return; }
         var types = new Dictionary<string, string> { { "proxy", "Shadowsocks" }, { "GROUP", "Selector" }, { "customDirect", "Direct" }, { "block", "Reject" } };
         var parsed = ConnectionParser.Parse(Json(("p", new[] { "proxy", "GROUP" }, "a.test", 100, 5), ("d", new[] { "DIRECT", "GROUP" }, "direct.test", 9999, 9999), ("x", new[] { "customDirect", "GROUP" }, "direct2.test", 500, 500), ("u", new[] { "GROUP" }, "unknown.test", 100, 100), ("b", new[] { "block" }, "blocked.test", 0, 0), ("ip", new[] { "proxy" }, "", 100, 100)), types);
         Equal(2, parsed.Connections.Count, "proxy filter"); Equal(2, parsed.DirectCount, "resolved direct filter"); Equal(2, parsed.UnknownCount, "unknown and blocked routes excluded"); True(parsed.Connections.Last().Target == "1.2.3.4", "IP fallback"); True(parsed.Connections[0].Process == "未知", "missing process");

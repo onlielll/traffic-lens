@@ -352,7 +352,7 @@ public sealed partial class TrafficStore : IDisposable
         }
     }
 
-    public List<DailyRow> Query(DateTime first, DateTime last)
+    public List<DailyRow> Query(DateTime first, DateTime last, int limit = -1)
     {
         var rows = new List<DailyRow>();
         Callback callback = (_, _, values, _) =>
@@ -367,7 +367,7 @@ public sealed partial class TrafficStore : IDisposable
             catch { return 1; }
         };
         Exec($"SELECT target,SUM(download),SUM(upload) FROM daily WHERE day>={Quote(first.ToString("yyyy-MM-dd"))} " +
-            $"AND day<={Quote(last.ToString("yyyy-MM-dd"))} GROUP BY target ORDER BY SUM(download)+SUM(upload) DESC;", callback);
+            $"AND day<={Quote(last.ToString("yyyy-MM-dd"))} GROUP BY target ORDER BY SUM(download)+SUM(upload) DESC LIMIT {limit};", callback);
         GC.KeepAlive(callback);
         return rows;
     }

@@ -33,6 +33,55 @@ public sealed partial class SettingsWindow
         if (index == 2) { Descendant<ScrollViewer>(rows)?.ScrollToTop(); rows.SelectedIndex = -1; }
     }
 
+    public async Task VerifyMotionLifecycleForTest(string output)
+    {
+        var results = new System.Collections.Generic.List<string>();
+        var failures = new System.Collections.Generic.List<Exception>();
+        async Task Check(string name, Func<Task> verify)
+        {
+            try { await verify(); results.Add($"PASS: {name}"); }
+            catch (Exception error) { results.Add($"FAIL: {name}: {error.Message}"); failures.Add(error); }
+        }
+        await Check("rapid nested-wheel reversal stops the old table motion", async () =>
+        {
+            SelectPage(2); SelectStatisticsView(0, false);
+            if (rowsReadTask != null) await rowsReadTask;
+            var outer = (SmoothScrollViewer)pages[2];
+            var inner = Descendant<ScrollViewer>(rows)!;
+            outer.StopMotion(); outer.ScrollToEnd(); inner.ScrollToTop();
+            await Task.Delay(80);
+            var source = Descendant<ListViewItem>(rows)!;
+            source.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120) { RoutedEvent = Mouse.PreviewMouseWheelEvent });
+            await Task.Delay(45);
+            if (inner.VerticalOffset <= 0) throw new InvalidOperationException("The fixture did not start table scrolling at the page boundary.");
+            double pageEnd = outer.VerticalOffset;
+            source.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, 120) { RoutedEvent = Mouse.PreviewMouseWheelEvent });
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            double stopped = inner.VerticalOffset;
+            await Task.Delay(220);
+            if (inner.VerticalOffset > stopped + 1 || outer.VerticalOffset >= pageEnd || outer.IsMoving)
+                throw new InvalidOperationException($"Reverse wheel left table motion running: table={stopped:0.###}->{inner.VerticalOffset:0.###}, page={pageEnd:0.###}->{outer.VerticalOffset:0.###}.");
+        });
+        await Check("statistics transitions finish and release their clocks", async () =>
+        {
+            SelectPage(2); SelectStatisticsView(0, false);
+            SelectStatisticsView(1);
+            await Task.Delay(45);
+            SelectStatisticsView(0);
+            await Task.Delay(45);
+            SelectStatisticsView(1);
+            await Task.Delay(240);
+            bool firstReleased = !statisticsPosition.HasAnimatedProperties && Math.Abs(statisticsPosition.X - 124) < 0.01;
+            for (int i = 0; i < 100; i++) SelectStatisticsView(i % 2);
+            SelectStatisticsView(0);
+            await Task.Delay(240);
+            if (!firstReleased || statisticsPosition.HasAnimatedProperties || statisticsPosition.X != 0 || rankingView.Visibility != Visibility.Visible || timelineView.Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException($"Statistics motion retained a clock or stale destination: firstReleased={firstReleased}, animated={statisticsPosition.HasAnimatedProperties}, x={statisticsPosition.X}.");
+        });
+        await Check("appearance fade releases clocks after completion and close", () => appearance!.VerifyPopupLifecycleForTest());
+        File.WriteAllLines(Path.Combine(output, "motion-regressions.txt"), results);
+        if (failures.Count > 0) throw new AggregateException("Motion lifecycle regressions failed.", failures);
+    }
     public async Task VerifyScrollingAndSlidersAsync(string output)
     {
         Width = 820; Height = 650;
@@ -181,12 +230,28 @@ public sealed partial class SettingsWindow
         System.IO.File.WriteAllText(System.IO.Path.Combine(output, "navigation-test.txt"), $"start={start:0.###}, middle={middle:0.###}, end={end:0.###}, systemAnimation={SystemParameters.ClientAreaAnimation}\n");
         if (SystemParameters.ClientAreaAnimation && (middle <= start || middle >= end || Math.Abs(end - 100) > 0.1))
             throw new InvalidOperationException("Navigation did not slide to the selected page.");
+        var rapidClock = System.Diagnostics.Stopwatch.StartNew();
         for (int i = 0; i < 80; i++)
             SelectPage(i % 4);
+        bool NavigationSettled() => currentPage == 3 && pages.Count(p => p.Visibility == Visibility.Visible) == 1 && pages[3].Visibility == Visibility.Visible &&
+            !navigationPosition.HasAnimatedProperties && Math.Abs(navigationPosition.Y - 150) < 0.01 &&
+            pages.All(p => !p.HasAnimatedProperties && p.Opacity == 1 && p.RenderTransform is TranslateTransform shift && !shift.HasAnimatedProperties && shift.X == 0);
+        string ClockState(string stage) => $"{stage}: elapsedMs={rapidClock.Elapsed.TotalMilliseconds:0.###}, currentPage={currentPage}, visible={pages.Count(p => p.Visibility == Visibility.Visible)}, navY={navigationPosition.Y:0.###}, navClock={navigationPosition.HasAnimatedProperties}; " +
+            string.Join("; ", pages.Select((p, i) => $"page[{i}]: visibility={p.Visibility}, isVisible={p.IsVisible}, loaded={p.IsLoaded}, opacity={p.Opacity:0.###}, pageClock={p.HasAnimatedProperties}, shiftX={((TranslateTransform)p.RenderTransform).X:0.###}, shiftClock={((TranslateTransform)p.RenderTransform).HasAnimatedProperties}"));
         await System.Threading.Tasks.Task.Delay(260);
-        if (pages.Count(p => p.Visibility == Visibility.Visible) != 1 || pages.Any(p => p.HasAnimatedProperties) || navigationPosition.HasAnimatedProperties)
-            throw new InvalidOperationException("Navigation retained transition clocks.");
-        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "navigation-test.txt"), $"PASS: start={start:0.#}, middle={middle:0.#}, end={end:0.#}; rapid navigation ends with one page and no live animation clocks\n");
+        var clockStates = new System.Collections.Generic.List<string> { ClockState("after260ms") };
+        // WPF completion callbacks are dispatched asynchronously; wait for their real cleanup, with a deadline.
+        while (!NavigationSettled() && rapidClock.Elapsed < TimeSpan.FromSeconds(2))
+        {
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+            if (!NavigationSettled()) await System.Threading.Tasks.Task.Delay(16);
+        }
+        clockStates.Add(ClockState("final"));
+        System.IO.File.WriteAllLines(System.IO.Path.Combine(output, "navigation-clock-test.txt"), clockStates);
+        if (!NavigationSettled())
+            throw new InvalidOperationException("Navigation retained transition clocks or an incorrect destination after dispatcher completion. " + clockStates[^1]);
+        System.IO.File.WriteAllText(System.IO.Path.Combine(output, "navigation-test.txt"), $"PASS: start={start:0.#}, middle={middle:0.#}, end={end:0.#}; rapid navigation ends with one page and no live animation clocks in {rapidClock.Elapsed.TotalMilliseconds:0.###} ms\n");
         SelectPage(0);
         await System.Threading.Tasks.Task.Delay(260);
     }

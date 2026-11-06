@@ -15,6 +15,7 @@ public static class ReleaseCheck
         using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array) throw new JsonException("Invalid release list.");
         ReleaseInfo? newest = null;
+        bool newestPreview = false;
         foreach (var item in document.RootElement.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("draft", out var draft) || draft.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
@@ -22,7 +23,11 @@ public static class ReleaseCheck
             string tag = ConnectionParser.GetString(item, "tag_name");
             if (!Version.TryParse(tag.TrimStart('v').Split('-')[0], out var version)) continue;
             if (!Uri.TryCreate(ConnectionParser.GetString(item, "html_url"), UriKind.Absolute, out var page) || page.Scheme != "https" || page.Host != "github.com" || !page.AbsolutePath.StartsWith("/onlielll/traffic-lens/releases/", StringComparison.Ordinal)) continue;
-            if (newest == null || version > newest.Version) newest = new(tag, version, page);
+            if (newest == null || version > newest.Version || (version == newest.Version && newestPreview && !preview.GetBoolean()))
+            {
+                newest = new(tag, version, page);
+                newestPreview = preview.GetBoolean();
+            }
         }
         return newest;
     }
@@ -40,12 +45,12 @@ public static class ReleaseCheck
     {
         try
         {
-            return Parse(await client.GetStringAsync("https://raw.githubusercontent.com/onlielll/traffic-lens/main/updates.json", cancellation), previews);
+            return Parse(await client.GetStringAsync("https://api.github.com/repos/onlielll/traffic-lens/releases?per_page=20", cancellation), previews);
         }
         catch (Exception error) when (!cancellation.IsCancellationRequested && error is HttpRequestException or OperationCanceledException or JsonException)
         {
-            // The small release feed avoids shared-IP API quotas; the API remains a single fallback.
-            return Parse(await client.GetStringAsync("https://api.github.com/repos/onlielll/traffic-lens/releases?per_page=20", cancellation), previews);
+            // Live metadata reflects release changes; the small feed remains a single fallback for API failures.
+            return Parse(await client.GetStringAsync("https://raw.githubusercontent.com/onlielll/traffic-lens/main/updates.json", cancellation), previews);
         }
     }
 
